@@ -35,7 +35,7 @@
 # 2022-06-14    Michael Vitale    version 2.1: Added view check. Fixed table/view check by adding join to information_schema.tables. Detailed table check.
 # 2022-06-17    Michael Vitale    version 2.1: Change detailedscan to mean real rowcounts.
 # 2022-06-19    Michael Vitale    version 2.1: Add logic for comparing keys and indexes.
-# 2022-08-31    Michael Vitale    version 2.2: Replace pg_auth with pg_roles to be compatible with PG cloud services.
+# 2022-08-31    Michael Vitale    version 2.2: Replace pg_auth with pg_roles to be compatible with PG cloud services. Fixed formatting to allow for longer names.
 ##########################################################################################
 import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass
 from optparse  import OptionParser
@@ -127,14 +127,19 @@ class maint:
     def CloseStuff(self):
 
         # rollback any unintentional changes
-        self.connS.rollback()
-        self.connT.rollback()
+        if self.connS is not None:
+            self.connS.rollback()
+        if self.connT is not None:            
+            self.connT.rollback()
 
-        self.curS.close()
-        self.connS.close()
+        if self.curS is not None:
+            self.curS.close()
+            self.connS.close()
     
-        self.curT.close()        
-        self.connT.close()
+        if self.connT is not None:    
+            self.curT.close()        
+            self.connT.close()
+
         if self.flog:
             self.flog.close()
 
@@ -164,7 +169,7 @@ class maint:
                     return RC_ERR
                 self.curS = self.connS.cursor()                    
             else:                    
-                print ('else branch')
+                # some other connection error
                 self.logit(ERR, msg)
                 return RC_ERR
         self.curS = self.connS.cursor()
@@ -416,47 +421,47 @@ class maint:
         msg = ''
         typediff = 'Object Count Diff:'
         if tbls_regular != arow[0]:
-            msg = '%20s Regular table mismatch (%d<>%d)' % (typediff, tbls_regular, arow[0])
+            msg = '%20s      Regular table mismatch (%d<>%d)' % (typediff, tbls_regular, arow[0])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)
         if tbls_unlogged != arow[1]:
-            msg = '%20s Unlogged table mismatch (%d<>%d)' % (typediff, tbls_unlogged, arow[1])
+            msg = '%20s     Unlogged table mismatch (%d<>%d)' % (typediff, tbls_unlogged, arow[1])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)
         if tbls_child != arow[2]:
-            msg = '%20s Child table mismatch (%d<>%d)' % (typediff, tbls_child, arow[2])
+            msg = '%20s        Child table mismatch (%d<>%d)' % (typediff, tbls_child, arow[2])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)        
         if tbls_parents != arow[3]:
-            msg = '%20s Parent table mismatch (%d<>%d)' % (typediff, tbls_parents, arow[3])
+            msg = '%20s       Parent table mismatch (%d<>%d)' % (typediff, tbls_parents, arow[3])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if tbls_total != arow[4]:
-            msg = '%20s Total table mismatch (%d<>%d)' % (typediff, tbls_total, arow[4])
+            msg = '%20s        Total table mismatch (%d<>%d)' % (typediff, tbls_total, arow[4])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)        
         if tbls_foreign != arow[5]:
-            msg = '%20s Foreign table mismatch (%d<>%d)' % (typediff, tbls_foreign, arow[5])
+            msg = '%20s      Foreign table mismatch (%d<>%d)' % (typediff, tbls_foreign, arow[5])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)            
         if sequences  != arow[6]:
-            msg = '%20s Sequences mismatch (%d<>%d)' % (typediff, sequences, arow[6])
+            msg = '%20s          Sequences mismatch (%d<>%d)' % (typediff, sequences, arow[6])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if identities != arow[7]:
-            msg = '%20s Identities mismatch (%d<>%d)' % (typediff, identities, arow[7])
+            msg = '%20s         Identities mismatch (%d<>%d)' % (typediff, identities, arow[7])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if indexes != arow[8]:
-            msg = '%20s Indexes mismatch (%d<>%d)' % (typediff, indexes, arow[8])
+            msg = '%20s            Indexes mismatch (%d<>%d)' % (typediff, indexes, arow[8])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if views != arow[9]:
-            msg = '%20s Views mismatch (%d<>%d)' % (typediff, views, arow[9])
+            msg = '%20s              Views mismatch (%d<>%d)' % (typediff, views, arow[9])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if pub_views != arow[10]:
-            msg = '%20s Public Views mismatch (%d<>%d)' % (typediff, pub_views, arow[10])
+            msg = '%20s       Public Views mismatch (%d<>%d)' % (typediff, pub_views, arow[10])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if mat_views != arow[11]:
@@ -464,35 +469,35 @@ class maint:
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if functions != arow[12]:
-            msg = '%20s Functions mismatch (%d<>%d)' % (typediff, functions, arow[12])
+            msg = '%20s          Functions mismatch (%d<>%d)' % (typediff, functions, arow[12])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if types != arow[13]:
-            msg = '%20s Types mismatch (%d<>%d)' % (typediff, types, arow[13])
+            msg = '%20s              Types mismatch (%d<>%d)' % (typediff, types, arow[13])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if trigfuncs != arow[14]:
-            msg = '%20s Trigger Functions mismatch (%d<>%d)' % (typediff, trigfuncs, arow[14])
+            msg = '%20s  Trigger Functions mismatch (%d<>%d)' % (typediff, trigfuncs, arow[14])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if triggers != arow[15]:
-            msg = '%20s Triggers mismatch (%d<>%d)' % (typediff, triggers, arow[15])
+            msg = '%20s           Triggers mismatch (%d<>%d)' % (typediff, triggers, arow[15])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if collations != arow[16]:
-            msg = '%20s Collations mismatch (%d<>%d)' % (typediff, collations, arow[16])
+            msg = '%20s         Collations mismatch (%d<>%d)' % (typediff, collations, arow[16])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if domains != arow[17]:
-            msg = '%20s Domains mismatch (%d<>%d)' % (typediff, domains, arow[17])
+            msg = '%20s            Domains mismatch (%d<>%d)' % (typediff, domains, arow[17])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if rules != arow[18]:
-            msg = '%20s Rules mismatch (%d<>%d)' % (typediff, rules, arow[18])
+            msg = '%20s              Rules mismatch (%d<>%d)' % (typediff, rules, arow[18])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
         if policies != arow[19]:
-            msg = '%20s Policies mismatch (%d<>%d)' % (typediff, policies, arow[19])
+            msg = '%20s           Policies mismatch (%d<>%d)' % (typediff, policies, arow[19])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                
 
@@ -1058,27 +1063,27 @@ class maint:
                     if sConstraintName == tConstraintName:
                         bFoundConstraint = True
                         if sConType != tConType:
-                            msg = '%20s Constraint Type mismatch (%s<>%s)' % (typediff, sConType, tConType)
+                            msg = '%20s   Constraint Type mismatch (%s<>%s)' % (typediff, sConType, tConType)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)                               
                         if sConfUpdType != tConfUpdType:
-                            msg = '%20s ConfUpdType mismatch (%s<>%s)' % (typediff, sConfUpdType, tConfUpdType)
+                            msg = '%20s       ConfUpdType mismatch (%s<>%s)' % (typediff, sConfUpdType, tConfUpdType)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)     
                         if sConfDelType != tConfDelType:
-                            msg = '%20s ConfDelType mismatch (%s<>%s)' % (typediff, sConfDelType, tConfDelType)
+                            msg = '%20s       ConfDelType mismatch (%s<>%s)' % (typediff, sConfDelType, tConfDelType)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)                                 
                         if sConfMatchType != tConfMatchType:
-                            msg = '%20s ConfMatchType mismatch (%s<>%s)' % (typediff, sConfMatchType, tConfMatchType)
+                            msg = '%20s     ConfMatchType mismatch (%s<>%s)' % (typediff, sConfMatchType, tConfMatchType)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)     
                         if sConKey != tConKey:
-                            msg = '%20s ConKey mismatch (%s<>%s)' % (typediff, sConKey, tConKey)
+                            msg = '%20s            ConKey mismatch (%s<>%s)' % (typediff, sConKey, tConKey)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)     
                         if sConfKey != tConfKey:
-                            msg = '%20s ConfKey mismatch (%s<>%s)' % (typediff, sConfKey, tConfKey)
+                            msg = '%20s           ConfKey mismatch (%s<>%s)' % (typediff, sConfKey, tConfKey)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)     
                         if sConstraintDef != tConstraintDef:
@@ -1098,7 +1103,7 @@ class maint:
                     self.ddldiffs = self.ddldiffs + 1
                     self.logit(DIFF, msg)                               
             if not bFoundTable:
-                msg = '%20s Target constraint table not found. Table(%s).  Missing at least one constraint:%s-%s' % (typediff, sTableName, sConType, sConstraintName)
+                msg =     '%20s Target constraint table not found. Table(%s)  Missing at least one constraint:%s-%s' % (typediff, sTableName, sConType, sConstraintName)
                 self.ddldiffs = self.ddldiffs + 1
                 self.logit(DIFF, msg)                               
                 
@@ -1123,11 +1128,11 @@ class maint:
                         bFoundConstraint = False
                         continue
             if not bFoundConstraint:                
-                msg = '%20s Source constraint name not found. Table(%s)  Constraint(%s)' % (typediff, tTableName, tConstraintName)
+                msg = '%20s  Source constraint name not found. Table(%s)  Constraint(%s)' % (typediff, tTableName, tConstraintName)
                 self.ddldiffs = self.ddldiffs + 1
                 self.logit(DIFF, msg)                                   
             if not bFoundTable:
-                msg = '%20s Source constraint table not found. Table(%s).  Missing at least one constraint:%s-%s' % (typediff, tTableName, tConType, tConstraintName)
+                msg = '%20s Source constraint table not found. Table(%s)  Missing at least one constraint:%s-%s' % (typediff, tTableName, tConType, tConstraintName)
                 self.ddldiffs = self.ddldiffs + 1
                 self.logit(DIFF, msg)
     
@@ -1212,19 +1217,19 @@ class maint:
                     if sIndexName == tIndexName:
                         bFoundIndex = True                
                         if sNatts != tNatts:
-                            msg = '%20s Index IndNatts mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sNatts, tNatts)
+                            msg = '%20s    Index IndNatts mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sNatts, tNatts)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sKeyAtts != tKeyAtts:
-                            msg = '%20s Index KeyAtts mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sKeyAtts, tKeyAtts)
+                            msg = '%20s     Index KeyAtts mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sKeyAtts, tKeyAtts)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sIsUnique != tIsUnique:
-                            msg = '%20s Index IsUnique mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsUnique, tIsUnique)
+                            msg = '%20s    Index IsUnique mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsUnique, tIsUnique)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sIsPrimary != tIsPrimary:
-                            msg = '%20s Index IsPrimary mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsPrimary, tIsPrimary)
+                            msg = '%20s   Index IsPrimary mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsPrimary, tIsPrimary)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sIsExclusion != tIsExclusion:
@@ -1236,23 +1241,23 @@ class maint:
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sIsValid != tIsValid:
-                            msg = '%20s Index IsValid mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsValid, tIsValid)
+                            msg = '%20s     Index IsValid mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsValid, tIsValid)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sIsReady != tIsReady:
-                            msg = '%20s Index IsReady mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsReady, tIsReady)
+                            msg = '%20s     Index IsReady mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsReady, tIsReady)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sIsLive != tIsLive:
-                            msg = '%20s Index IsLive mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsLive, tIsLive)
+                            msg = '%20s      Index IsLive mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIsLive, tIsLive)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sIndKey != tIndKey:
-                            msg = '%20s Index IndKey mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIndKey, tIndKey)
+                            msg = '%20s      Index IndKey mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sIndKey, tIndKey)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sKeyCols != tKeyCols:
-                            msg = '%20s Index KeyCols mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sKeyCols, tKeyCols)
+                            msg = '%20s     Index KeyCols mismatch for table(%s) index(%s): (%s<>%s)' % (typediff, sTableName, sIndexName, sKeyCols, tKeyCols)
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit(DIFF, msg)
                         if sIndexDef != tIndexDef:
@@ -1267,11 +1272,11 @@ class maint:
             else:
                 continue
             if not bFoundIndex:
-                msg = '%20s Target index name not found. Table(%s)  Index(%s)' % (typediff, sTableName, sIndexName)
+                msg = '%20s       Target index name not found. Table(%s)  Index(%s)' % (typediff, sTableName, sIndexName)
                 self.ddldiffs = self.ddldiffs + 1
                 self.logit(DIFF, msg)                               
         if not bFoundTable:
-            msg = '%20s Target index table not found. Table(%s).  Missing at least one index:%s' % (typediff, sTableName, sIndexName)
+            msg = '%20s          Target index table not found. Table(%s).  Missing at least one index:%s' % (typediff, sTableName, sIndexName)
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                                       
         
@@ -1297,11 +1302,11 @@ class maint:
                         bFoundIndex = False
                         continue
             if not bFoundIndex and bFoundTable:                
-                msg = '%20s Source index name not found. Table(%s)  Index(%s)' % (typediff, tTableName, tIndexName)
+                msg = '%20s       Source index name not found. Table(%s)  Index(%s)' % (typediff, tTableName, tIndexName)
                 self.ddldiffs = self.ddldiffs + 1
                 self.logit(DIFF, msg)                                   
             if not bFoundTable:
-                msg = '%20s Source index table not found. Table(%s).  Missing at least one index:%s' % (typediff, tTableName, tIndexName)
+                msg = '%20s      Source index table not found. Table(%s).  Missing at least one index:%s' % (typediff, tTableName, tIndexName)
                 self.ddldiffs = self.ddldiffs + 1
                 self.logit(DIFF, msg)        
     
@@ -1379,7 +1384,7 @@ class maint:
                     msg='Program Errror: unexpected table mismatch for target tables (%s, %s)' % (tTable1, tTable2)
                     self.logit(ERR, msg)
                     return RC_ERR     
-                    
+
                 if sTable1 == tTable1:
                     # we are using pg_class.reltuples not pg_stat_user_tables.n_live_tup
                     if sCount1 != tCount1:
@@ -1387,7 +1392,7 @@ class maint:
                         if pg.scantype != 'detailedscan':
                             diffs = diffs + 1
                             self.rowcntdiffs = self.rowcntdiffs + 1
-                            self.logit (DIFF, '%20s %-24s rowcnts mismatch %07d<>%07d' % (typediff, sTable1, sCount1, tCount1))
+                            self.logit (DIFF, '%20s %-35s rowcnts mismatch %07d<>%07d' % (typediff, sTable1, sCount1, tCount1))
                         else:
                             aschema = self.Sschema
                             sql = 'SELECT COUNT(*) from %s."%s"' % (aschema, sTable1)
@@ -1410,7 +1415,7 @@ class maint:
                             if Srow[0] != Trow[0]:
                                 diffs = diffs + 1
                                 self.rowcntdiffs = self.rowcntdiffs + 1
-                                self.logit (DIFF, '%20s %-24s Real rowcnts mismatch %07d<>%07d' % (typediff, sTable1, Srow[0], Trow[0]))
+                                self.logit (DIFF, '%20s %-35s Real rowcnts mismatch %07d<>%07d' % (typediff, sTable1, Srow[0], Trow[0]))
 
         print ('')
         return RC_OK    
@@ -1440,6 +1445,7 @@ def setupOptionParser():
 # MAIN ENTRY POINT #
 ####################
 
+dt_started = datetime.datetime.utcnow()
 optionParser   = setupOptionParser()
 (options,args) = optionParser.parse_args()
 
@@ -1553,16 +1559,19 @@ if rc == RC_ERR:
     pg.CloseStuff()
     sys.exit(FAIL)    
 
+dt_ended = datetime.datetime.utcnow()
+secs = round((dt_ended - dt_started).total_seconds())
+
 if pg.scantype == 'simplescan':
     if pg.ddldiffs == 0:
-        pg.logit(INFO,"Summary: No differences found.")
+        pg.logit(INFO,"Summary (%d seconds): No differences found." % secs)
     else:
-        pg.logit(INFO,"Summary: Differences found: %d" % pg.ddldiffs)
+        pg.logit(INFO,"Summary (%d seconds): Differences found: %d" % (secs, pg.ddldiffs))
 else:
     if pg.ddldiffs == 0 and pg.rowcntdiffs == 0:
-        pg.logit(INFO,"Summary: No differences found.")
+        pg.logit(INFO,"Summary (%d seconds): No differences found." % secs)
     else:
-        pg.logit(INFO,"Summary: Differences found: ddl (%d)  rowcnts (%d)" % (pg.ddldiffs, pg.rowcntdiffs))
+        pg.logit(INFO,"Summary (%d seconds): Differences found: ddl (%d)  rowcnts (%d)" % (secs, pg.ddldiffs, pg.rowcntdiffs))
 
 pg.logit(INFO,"--------- program end   ----------")
 pg.CloseStuff()
