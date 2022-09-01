@@ -35,7 +35,7 @@
 # 2022-06-14    Michael Vitale    version 2.1: Added view check. Fixed table/view check by adding join to information_schema.tables. Detailed table check.
 # 2022-06-17    Michael Vitale    version 2.1: Change detailedscan to mean real rowcounts.
 # 2022-06-19    Michael Vitale    version 2.1: Add logic for comparing keys and indexes.
-# 2022-08-31    Michael Vitale    version 2.2: Replace pg_auth with pg_roles to be compatible with PG cloud services. Fixed formatting to allow for longer names.
+# 2022-09-01    Michael Vitale    version 2.2: Replace pg_auth with pg_roles to be compatible with PG cloud services. Fixed formatting to allow for longer names.
 ##########################################################################################
 import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass
 from optparse  import OptionParser
@@ -45,8 +45,8 @@ import psycopg2
 DESCRIPTION="This python utility program compares schemas for a specific database."
 VERSION    = 2.2
 PROGNAME   = "pg_match"
-ADATE      = "August 31, 2022"
-PROGDATE   = "2022-08-31"
+ADATE      = "September 01, 2022"
+PROGDATE   = "2022-09-01"
 
 #Globals
 FAIL = 1
