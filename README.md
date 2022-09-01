@@ -4,7 +4,7 @@ Schema Summary Comparison Tool
 pg_match.py -t simplescan --Shost localhost --Sport 5414 --Suser postgres --Sdb clone_testing --Sschema sample \\ <br/>
 --Thost localhost --Tport 5414 --Tuser postgres --Tdb clone_testing --Tschema sample_clone1
 
-[https://github.com/github/{repository}/blob/assets/cat.png ](https://github.com/MichaelDBA/pg_match/blob/main/Screen%20Shot.png)
+[https://github.com/MichaelDBA/pg_match/blob/main/Screen%20Shot.png]
 
 sfdsdfasdafdfs
 
