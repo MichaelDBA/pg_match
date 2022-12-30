@@ -36,6 +36,7 @@
 # 2022-06-17    Michael Vitale    version 2.1: Change detailedscan to mean real rowcounts.
 # 2022-06-19    Michael Vitale    version 2.1: Add logic for comparing keys and indexes.
 # 2022-09-01    Michael Vitale    version 2.2: Replace pg_auth with pg_roles to be compatible with PG cloud services. Fixed formatting to allow for longer names.
+# 2022-12-30    Michael Vitale    version 2.3: Fix column comparison for column differences, not attribute ones which are handled correctly.
 ##########################################################################################
 import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass
 from optparse  import OptionParser
@@ -43,10 +44,10 @@ from decimal import *
 import psycopg2
 
 DESCRIPTION="This python utility program compares schemas for a specific database."
-VERSION    = 2.2
+VERSION    = 2.3
 PROGNAME   = "pg_match"
-ADATE      = "September 01, 2022"
-PROGDATE   = "2022-09-01"
+ADATE      = "December 30, 2022"
+PROGDATE   = "2022-12-30"
 
 #Globals
 FAIL = 1
@@ -908,6 +909,7 @@ class maint:
             return RC_ERR    
 
         cnt1 = 0
+        print ('          Column Attribute Comparison in progress...')
         for sRow in Srows:
             sTableName   = sRow[0]
             sOrdinalPos  = sRow[1]
@@ -920,8 +922,9 @@ class maint:
             sNumScale    = sRow[8]
             sIsIdentity  = sRow[9]
             sIsGenerated = sRow[10]
-           
+            
             cnt2 = 0
+            bFound = False
             for tRow in Trows:
                 tTableName   = tRow[0]
                 tOrdinalPos  = tRow[1]
@@ -938,6 +941,7 @@ class maint:
 
                 typediff = 'Column Diff:'
                 if sTableName == tTableName:
+                    bFound = True
                     if sColumnName == tColumnName:
                         if sOrdinalPos != tOrdinalPos:
                             self.ddldiffs = self.ddldiffs + 1
@@ -970,12 +974,54 @@ class maint:
                         if sIsGenerated != tIsGenerated:
                             self.ddldiffs = self.ddldiffs + 1
                             self.logit (DIFF, '%20s Table (%s): Is Generated mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sIsGenerated, tIsGenerated))
+                elif bFound:
+                    # we already processed the source table so go back to main loop for next table
+                    break
             cnt1 = cnt1 + 1
+
+        # loop again looking for column name diffs
+        cnt1 = 0
+        print ('          Column Comparison in progress...')
+        lastTableName = ''
+        for sRow in Srows:
+            sTableName   = sRow[0]
+            if sTableName == lastTableName:
+                continue
+            lastTableName = sTableName    
+            
+            sql1 = "SELECT table_name, string_agg(column_name, ',' ORDER BY column_name) columns FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' GROUP BY 1" % (self.Sschema, sTableName);
+            try:              
+                self.curS.execute(sql1)
+            except Exception as error:
+                msg="Source Schema Columns Error %s *** %s" % (type(error), error)
+                self.logit(ERR, msg)
+                return RC_ERR
+            arow = self.curS.fetchone()
+            if len(arow) == 0:
+                msg="Source schema Columns Error: No rows returned."
+                self.logit(ERR, msg)
+                return RC_ERR    
+            sColumns = arow[1]
+            sql2 = "SELECT table_name, string_agg(column_name, ',' ORDER BY column_name) columns FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' GROUP BY 1" % (self.Tschema, sTableName);
+            try:              
+                self.curT.execute(sql2)
+            except Exception as error:
+                msg="Target Schema Columns Error %s *** %s" % (type(error), error)
+                self.logit(ERR, msg)
+                return RC_ERR
+            arow = self.curT.fetchone()
+            if arow is None:
+                msg="          Skipping missing target table, %s." % sTableName
+                self.logit(DEBUG, msg)
+                continue
+            tColumns = arow[1]
+            if sColumns != tColumns:
+                print('          Columns mismatch for table, %s' % sTableName)
             
         print ('')
         return RC_OK
 
-    
+
 
     ##############################
     # Phase 4: Key/Indexes Diffs #
@@ -1549,15 +1595,16 @@ if rc == RC_ERR:
     sys.exit(FAIL)    
 
 # Phase 5: Compare Row Counts
-pg.logit(INFO, "PHASE 5: Comparing Row Counts...")
-if pg_scantype == 'simplescan':
-    pg.logit(WARN, '*** SimpleScan: Row Counts are statistically computed so make sure you run ANALYZE beforehand. ***')
-rc = pg.CompareRowCounts()
-if rc == RC_ERR:
-    # error has already been logged
-    pg.logit(INFO, 'CompareRowCounts() Errror.')
-    pg.CloseStuff()
-    sys.exit(FAIL)    
+if pg_scantype == 'DetailedScan':
+    pg.logit(INFO, "PHASE 5: Comparing Row Counts...")
+    if pg_scantype == 'simplescan':
+        pg.logit(WARN, '*** SimpleScan: Row Counts are statistically computed so make sure you run ANALYZE beforehand. ***')
+    rc = pg.CompareRowCounts()
+    if rc == RC_ERR:
+        # error has already been logged
+        pg.logit(INFO, 'CompareRowCounts() Errror.')
+        pg.CloseStuff()
+        sys.exit(FAIL)    
 
 dt_ended = datetime.datetime.utcnow()
 secs = round((dt_ended - dt_started).total_seconds())
@@ -1667,6 +1714,3 @@ Select object, count(*) from details group by 1 order by 1;
 
 
 '''
-
-
-
