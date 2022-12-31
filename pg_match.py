@@ -36,7 +36,9 @@
 # 2022-06-17    Michael Vitale    version 2.1: Change detailedscan to mean real rowcounts.
 # 2022-06-19    Michael Vitale    version 2.1: Add logic for comparing keys and indexes.
 # 2022-09-01    Michael Vitale    version 2.2: Replace pg_auth with pg_roles to be compatible with PG cloud services. Fixed formatting to allow for longer names.
-# 2023-01-02    Michael Vitale    version 2.3: Fix column comparison for column differences, not attribute ones which are handled correctly.
+# 2023-01-02    Michael Vitale    version 3.0: Added logic for funcs/procs diffs.
+#                                              Fixed column comparison for column differences, not attribute ones which are handled correctly.
+#                                              Fixed column attribute slowness
 ##########################################################################################
 import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass
 from optparse  import OptionParser
@@ -44,7 +46,7 @@ from decimal import *
 import psycopg2
 
 DESCRIPTION="This python utility program compares schemas for a specific database."
-VERSION    = 2.3
+VERSION    = 3.0
 PROGNAME   = "pg_match"
 ADATE      = "January 2, 2023"
 PROGDATE   = "2023--01-02"
@@ -955,7 +957,6 @@ class maint:
         # loop again only looking for column attribute differences
         typediff = 'Attributes Diff'        
         cnt1 = 0
-        print('')
         #self.logit(INFO, '         Column Attribute Comparison in progress...')
         for sRow in Srows:
             sTableName   = sRow[0]
@@ -1382,8 +1383,88 @@ class maint:
         print ('')
         return RC_OK        
     
+
+    #####################################
+    # Phase 5: Compare Funcs/Procsdiffs #
+    #####################################
+    def CompareFuncsProcs(self):        
+        # output --> FUNCTION:fn_verticalregions(character varying, character varying)
+        aschema = self.Sschema
+        sql = "SELECT format('%%s:%%I(%%s)', CASE p.prokind WHEN 'p' THEN 'PROCEDURE' WHEN 'a' THEN 'AGGREGATE FUNCTION' WHEN 'w' THEN 'WINDOW FUNCTION' WHEN 'f' THEN 'FUNCTION' ELSE '' END, " \
+              "p.proname, oidvectortypes(p.proargtypes)) ddldef FROM pg_proc p INNER JOIN pg_namespace ns ON (p.pronamespace = ns.oid) WHERE ns.nspname = '%s' ORDER BY 1" % (aschema)
+        try:              
+            self.curS.execute(sql)
+        except Exception as error:
+            msg="Source Funcs/Procs Error %s *** %s" % (type(error), error)
+            self.logit(ERR, msg)
+            return RC_ERR
+
+        Srows = self.curS.fetchall()
+        if len(Srows) == 0:
+            msg="      Source Funcs/Procs Notification: No funcs/procs found."
+            self.logit(INFO, msg)
+
+        aschema = self.Tschema
+        sql = "SELECT format('%%s:%%I(%%s)', CASE p.prokind WHEN 'p' THEN 'PROCEDURE' WHEN 'a' THEN 'AGGREGATE FUNCTION' WHEN 'w' THEN 'WINDOW FUNCTION' WHEN 'f' THEN 'FUNCTION' ELSE '' END, " \
+              "p.proname, oidvectortypes(p.proargtypes)) ddldef FROM pg_proc p INNER JOIN pg_namespace ns ON (p.pronamespace = ns.oid) WHERE ns.nspname = '%s' ORDER BY 1" % (aschema)
+        try:              
+            self.curT.execute(sql)
+        except Exception as error:
+            msg="Target Funcs/Procs Error %s *** %s" % (type(error), error)
+            self.logit(ERR, msg)
+            return RC_ERR
+
+        Trows = self.curT.fetchall()
+        if len(Trows) == 0:
+            msg="      Target Funcs/Procs Notification: No funcs/procs found."
+            self.logit(INFO, msg)
+            print('')
+            return RC_OK
+
+        cnt1 = 0
+        diffs = 0
+        typediff = 'Funcs/Procs Diff'
+        for sRow in Srows:
+            sobject = sRow[0]
+            
+            cnt2 = 0
+            bFound = False
+            for tRow in Trows:
+                tobject = tRow[0]
+                if tobject == sobject:
+                    bFound = True
+                    break
+                cnt2 = cnt2 + 1
+            if not bFound:
+                self.ddldiffs = self.ddldiffs + 1
+                msg = '%20s:       Missing in Target - %s', (sobject)
+                self.logit(DIFF, msg)                                   
+            cnt1 = cnt1 + 1
+            
+        # do the reverse from target perspective
+        for tRow in Trows:
+            tobject = tRow[0]
+            
+            cnt2 = 0
+            bFound = False
+            for sRow in Srows:
+                sobject = sRow[0]
+                if tobject == sobject:
+                    bFound = True
+                    break
+                cnt2 = cnt2 + 1    
+            if not bFound:
+                self.ddldiffs = self.ddldiffs + 1
+                msg = '%20s:       Missing in Source - %s', (tobject)
+                self.logit(DIFF, msg)                                   
+            cnt1 = cnt1 + 1
+
+        print ('')
+        return RC_OK    
+    
+    
     ############################
-    # Phase 5: Row count diffs #
+    # Phase 6: Row count diffs #
     ############################
     def CompareRowCounts(self):    
         aschema = self.Sschema
@@ -1485,7 +1566,6 @@ class maint:
                                 diffs = diffs + 1
                                 self.rowcntdiffs = self.rowcntdiffs + 1
                                 self.logit (DIFF, '%20s %-35s Real rowcnts mismatch %08d<>%08d' % (typediff, sTable1, Srow[0], Trow[0]))
-
         print ('')
         return RC_OK    
 
@@ -1510,7 +1590,8 @@ def setupOptionParser():
     
     parser.add_option("-r", "--ignore_rowcounts", dest="ignore_rowcounts",  help="Ignore row counts diffs",default=False, action="store_true")
     parser.add_option("-i", "--ignore_indexes",   dest="ignore_indexes",    help="Ignore index diffs",default=False, action="store_true")
-
+    parser.add_option("-f", "--ignore_funcs",     dest="ignore_funcs",      help="Ignore func/proc diffs",default=False, action="store_true")
+    
     return parser
 
 ####################
@@ -1540,6 +1621,7 @@ pg.logging           = options.logging
 pg.verbose           = options.verbose
 pg.IgnoreRowCounts   = options.ignore_rowcounts
 pg.IgnoreIndexes     = options.ignore_indexes
+pg.IgnoreFuncs       = options.ignore_funcs
 
 # check parms
 if pg.Suser == '':
@@ -1614,7 +1696,8 @@ if rc == RC_ERR:
 
 # Phase 4: Compare Key/Indexes
 if pg.IgnoreIndexes:
-    pg.logit(INFO, 'Bypassing Index comparison...')
+    pg.logit(INFO, 'PHASE 4: Bypassing Index comparison...')
+    print('')
 else:
     pg.logit(INFO, "PHASE 4: Comparing Constraints/Indexes...")
     rc = pg.CompareKeysIndexes()
@@ -1624,12 +1707,26 @@ else:
         pg.CloseStuff()
         sys.exit(FAIL)    
 
-# Phase 5: Compare Row Counts
-if pg.IgnoreRowCounts:
-    pg.logit(INFO, 'Bypassing Row Count comparison...')
+# Phase 5: Compare Funcs/Procs
+if pg.IgnoreFuncs:
+    pg.logit(INFO, 'PHASE 5: Bypassing Func/Proc comparison...')
+    print('')
 else:
-    pg.logit(INFO, "PHASE 5: Comparing Row Counts...")
-    if pg.IgnoreRows_scantype == 'simplescan':
+    pg.logit(INFO, "PHASE 5: Comparing Funcs/Procs...")
+    rc = pg.CompareFuncsProcs()
+    if rc == RC_ERR:
+        # error has already been logged
+        pg.logit(INFO, 'CompareFuncsProcs Errror.')
+        pg.CloseStuff()
+        sys.exit(FAIL)    
+
+# Phase 6: Compare Row Counts
+if pg.IgnoreRowCounts:
+    pg.logit(INFO, 'PHASE 6: Bypassing Row Count comparison...')
+    print('')
+else:
+    pg.logit(INFO, "PHASE 6: Comparing Row Counts...")
+    if pg.scantype == 'simplescan':
         pg.logit(WARN, '*** SimpleScan: Row Counts are statistically computed so make sure you run ANALYZE beforehand. ***')
     rc = pg.CompareRowCounts()
     if rc == RC_ERR:
@@ -1641,16 +1738,10 @@ else:
 dt_ended = datetime.datetime.utcnow()
 secs = round((dt_ended - dt_started).total_seconds())
 
-if pg.scantype == 'simplescan':
-    if pg.ddldiffs == 0:
-        pg.logit(INFO,"Summary (%d seconds): No DDL differences found." % secs)
-    else:
-        pg.logit(INFO,"Summary (%d seconds): DDL Differences found: %d" % (secs, pg.ddldiffs))
+if pg.ddldiffs == 0 and pg.rowcntdiffs == 0:
+    pg.logit(INFO,"Summary (%d seconds): No DDL differences found." % secs)
 else:
-    if pg.ddldiffs == 0 and pg.rowcntdiffs == 0:
-        pg.logit(INFO,"Summary (%d seconds): No DDL differences found." % secs)
-    else:
-        pg.logit(INFO,"Summary (%d seconds): DDL Differences found: ddl (%d)  rowcnts (%d)" % (secs, pg.ddldiffs, pg.rowcntdiffs))
+    pg.logit(INFO,"Summary (%d seconds): DDL Differences found: ddl (%d)  rowcnts (%d)" % (secs, pg.ddldiffs, pg.rowcntdiffs))
 
 pg.logit(INFO,"--------- program end   ----------")
 pg.CloseStuff()
@@ -1746,4 +1837,6 @@ Select object, count(*) from details group by 1 order by 1;
 
 
 '''
+
+
 
