@@ -49,7 +49,7 @@ DESCRIPTION="This python utility program compares schemas for a specific databas
 VERSION    = 3.0
 PROGNAME   = "pg_match"
 ADATE      = "January 2, 2023"
-PROGDATE   = "2023--01-02"
+PROGDATE   = "2023-01-02"
 
 #Globals
 FAIL = 1
