@@ -20,7 +20,7 @@
 # 2. Both versions must be v10 if either one of them is v10.
 # 3. Python 2.7+, 3.x+ are supported python versions.
 #
-# Copyright (C) 2013 - 2022, SQLExec LLC.  All rights reserved.
+# Copyright (C) 2013 - 2023, SQLExec LLC.  All rights reserved.
 #
 # Modifications History:
 # Date          Programmer        Description of Change
@@ -36,7 +36,7 @@
 # 2022-06-17    Michael Vitale    version 2.1: Change detailedscan to mean real rowcounts.
 # 2022-06-19    Michael Vitale    version 2.1: Add logic for comparing keys and indexes.
 # 2022-09-01    Michael Vitale    version 2.2: Replace pg_auth with pg_roles to be compatible with PG cloud services. Fixed formatting to allow for longer names.
-# 2022-12-30    Michael Vitale    version 2.3: Fix column comparison for column differences, not attribute ones which are handled correctly.
+# 2023-01-02    Michael Vitale    version 2.3: Fix column comparison for column differences, not attribute ones which are handled correctly.
 ##########################################################################################
 import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass
 from optparse  import OptionParser
@@ -46,8 +46,8 @@ import psycopg2
 DESCRIPTION="This python utility program compares schemas for a specific database."
 VERSION    = 2.3
 PROGNAME   = "pg_match"
-ADATE      = "December 30, 2022"
-PROGDATE   = "2022-12-30"
+ADATE      = "January 2, 2023"
+PROGDATE   = "2023--01-02"
 
 #Globals
 FAIL = 1
@@ -116,10 +116,13 @@ class maint:
             self.logfile = "%spg_match_%s.log" % (path,now)
             self.flog = open(self.logfile, 'a')
 
+        now = datetime.datetime.now().strftime("%y-%m-%d %H:%M:%S ")
         if self.logging:
-            now = datetime.datetime.now().strftime("%y-%m-%d %H:%M:%S ")
             self.flog.write(severity + now + msg + "\n")
-        print (msg)
+        if self.verbose:
+            print (now + ' ' + msg)
+        else:    
+            print (msg)
         return self.flog
 
     ##########################
@@ -903,85 +906,15 @@ class maint:
             return RC_ERR
 
         Trows = self.curT.fetchall()
-        if len(Trows) == 0:
+        TargetRows = len(Trows)
+        if TargetRows == 0:
             msg="Target Column Diff Error: No rows returned."
             self.logit(ERR, msg)
             return RC_ERR    
 
+        # loop only looking for column differences
+        typediff = 'Columns Diff'
         cnt1 = 0
-        print ('          Column Attribute Comparison in progress...')
-        for sRow in Srows:
-            sTableName   = sRow[0]
-            sOrdinalPos  = sRow[1]
-            sColumnName  = sRow[2]
-            sColumnDflt  = sRow[3]
-            sIsNull      = sRow[4]
-            sDataType    = sRow[5]
-            sCharMaxLen  = sRow[6]
-            sNumPrecRadx = sRow[7]
-            sNumScale    = sRow[8]
-            sIsIdentity  = sRow[9]
-            sIsGenerated = sRow[10]
-            
-            cnt2 = 0
-            bFound = False
-            for tRow in Trows:
-                tTableName   = tRow[0]
-                tOrdinalPos  = tRow[1]
-                tColumnName  = tRow[2]
-                tColumnDflt  = tRow[3]
-                tIsNull      = tRow[4]
-                tDataType    = tRow[5]
-                tCharMaxLen  = tRow[6]
-                tNumPrecRadx = tRow[7]
-                tNumScale    = tRow[8]
-                tIsIdentity  = tRow[9]
-                tIsGenerated = tRow[10]
-                cnt2 = cnt2 + 1
-
-                typediff = 'Column Diff:'
-                if sTableName == tTableName:
-                    bFound = True
-                    if sColumnName == tColumnName:
-                        if sOrdinalPos != tOrdinalPos:
-                            self.ddldiffs = self.ddldiffs + 1
-                            self.logit (DIFF, '%20s Table (%s): Ordinal Position mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sOrdinalPos, tOrdinalPos))
-                        if sColumnDflt != tColumnDflt:
-                            # remove schema names in column default. For instance nextval() points to a specific schema.sequence name
-                            sBuffer = sColumnDflt.replace(self.Sschema + '.', '');
-                            tBuffer = tColumnDflt.replace(self.Tschema + '.', '');
-                            if sBuffer != tBuffer:
-                                self.ddldiffs = self.ddldiffs + 1
-                                self.logit (DIFF, '%20s Table (%s): Default mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sColumnDflt, tColumnDflt))
-                        if sIsNull != tIsNull:
-                            self.ddldiffs = self.ddldiffs + 1
-                            self.logit (DIFF, '%20s Table (%s): Is Nullable mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sIsNull, tIsNull))
-                        if sDataType != tDataType:
-                            self.ddldiffs = self.ddldiffs + 1
-                            self.logit (DIFF, '%20s Table (%s): Data Type mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sDataType, tDataType))
-                        if sCharMaxLen != tCharMaxLen:
-                            self.ddldiffs = self.ddldiffs + 1
-                            self.logit (DIFF, '%20s Table (%s): Char Max Len mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sCharMaxLen, tCharMaxLen))
-                        if sNumPrecRadx != tNumPrecRadx:
-                            self.ddldiffs = self.ddldiffs + 1
-                            self.logit (DIFF, '%20s Table (%s): Numeric Precision Radix mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sNumPrecRadx, tNumPrecRadx))
-                        if sNumScale != tNumScale:
-                            self.ddldiffs = self.ddldiffs + 1
-                            self.logit (DIFF, '%20s Table (%s): Numeric Scale mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sNumScale, tNumScale))
-                        if sIsIdentity != tIsIdentity:
-                            self.ddldiffs = self.ddldiffs + 1
-                            self.logit (DIFF, '%20s Table (%s): Is Identity mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sIsIdentity, tIsIdentity))
-                        if sIsGenerated != tIsGenerated:
-                            self.ddldiffs = self.ddldiffs + 1
-                            self.logit (DIFF, '%20s Table (%s): Is Generated mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sIsGenerated, tIsGenerated))
-                elif bFound:
-                    # we already processed the source table so go back to main loop for next table
-                    break
-            cnt1 = cnt1 + 1
-
-        # loop again looking for column name diffs
-        cnt1 = 0
-        print ('          Column Comparison in progress...')
         lastTableName = ''
         for sRow in Srows:
             sTableName   = sRow[0]
@@ -1016,7 +949,97 @@ class maint:
                 continue
             tColumns = arow[1]
             if sColumns != tColumns:
-                print('          Columns mismatch for table, %s' % sTableName)
+                self.ddldiffs = self.ddldiffs + 1
+                self.logit (DIFF, '%20s: Table (%35s) Columns Mismatch' % (typediff, sTableName))              
+
+        # loop again only looking for column attribute differences
+        typediff = 'Attributes Diff'        
+        cnt1 = 0
+        print('')
+        #self.logit(INFO, '         Column Attribute Comparison in progress...')
+        for sRow in Srows:
+            sTableName   = sRow[0]
+            sOrdinalPos  = sRow[1]
+            sColumnName  = sRow[2]
+            sColumnDflt  = sRow[3]
+            sIsNull      = sRow[4]
+            sDataType    = sRow[5]
+            sCharMaxLen  = sRow[6]
+            sNumPrecRadx = sRow[7]
+            sNumScale    = sRow[8]
+            sIsIdentity  = sRow[9]
+            sIsGenerated = sRow[10]
+           
+            if sTableName != 't1':
+              continue
+              
+            # find the index of corresponding target table            
+            try:
+	        x = [ x[0] for x in Trows].index(sTableName)
+	    except ValueError:
+	        # not found, so just ignore
+	        #print ('bypassing table not found: %s' % sTableName)
+	        continue
+            tTableName  = Trows[x][0]	        
+            #print ('found table match (%s/%s) in target array' % (sTableName, tTableName))	        
+            
+            cnt2 = x
+            while(True):
+               if cnt2 == TargetRows:
+                   break;
+               tTableName  = Trows[cnt2][0]
+               tColumnName = Trows[cnt2][2]
+               #print ('tables (%s/%s) columns (%s/%s)' % (sTableName, tTableName, sColumnName, tColumnName))
+               if tTableName != sTableName:
+                   # finished processing this table
+                   #print('finished with this table')
+                   break;
+               if sColumnName == tColumnName:
+                   # found match, compare attributes
+                   tOrdinalPos  = Trows[cnt2][1]
+                   tColumnDflt  = Trows[cnt2][3]
+                   tIsNull      = Trows[cnt2][4]
+                   tDataType    = Trows[cnt2][5]
+                   tCharMaxLen  = Trows[cnt2][6]
+                   tNumPrecRadx = Trows[cnt2][7]
+                   tNumScale    = Trows[cnt2][8]
+                   tIsIdentity  = Trows[cnt2][9]
+                   tIsGenerated = Trows[cnt2][10]    
+                   #print('column (%s) IsNull(%s/%s)' % (tColumnName, sIsNull, tIsNull))
+                   
+                   if sOrdinalPos != tOrdinalPos:
+                       self.ddldiffs = self.ddldiffs + 1
+                       self.logit (DIFF, '%20s: Table (%35s) Ordinal Position mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sOrdinalPos, tOrdinalPos))
+                   if sColumnDflt != tColumnDflt:
+                       # remove schema names in column default. For instance nextval() points to a specific schema.sequence name
+                       sBuffer = sColumnDflt.replace(self.Sschema + '.', '');
+                       tBuffer = tColumnDflt.replace(self.Tschema + '.', '');
+                       if sBuffer != tBuffer:
+                           self.ddldiffs = self.ddldiffs + 1
+                           self.logit (DIFF, '%20s: Table (%35s) Default mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sColumnDflt, tColumnDflt))
+                   if sIsNull != tIsNull:
+                       self.ddldiffs = self.ddldiffs + 1
+                       self.logit (DIFF, '%20s: Table (%35s) Is Nullable mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sIsNull, tIsNull))
+                   if sDataType != tDataType:
+                       self.ddldiffs = self.ddldiffs + 1
+                       self.logit (DIFF, '%20s: Table (%35s) Data Type mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sDataType, tDataType))
+                   if sCharMaxLen != tCharMaxLen:
+                       self.ddldiffs = self.ddldiffs + 1
+                       self.logit (DIFF, '%20s: Table (%35s) Char Max Len mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sCharMaxLen, tCharMaxLen))
+                   if sNumPrecRadx != tNumPrecRadx:
+                       self.ddldiffs = self.ddldiffs + 1
+                       self.logit (DIFF, '%20s: Table (%35s) Numeric Precision Radix mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sNumPrecRadx, tNumPrecRadx))
+                   if sNumScale != tNumScale:
+                       self.ddldiffs = self.ddldiffs + 1
+                       self.logit (DIFF, '%20s: Table (%35s) Numeric Scale mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sNumScale, tNumScale))
+                   if sIsIdentity != tIsIdentity:
+                       self.ddldiffs = self.ddldiffs + 1
+                       self.logit (DIFF, '%20s: Table (%35s) Is Identity mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sIsIdentity, tIsIdentity))
+                   if sIsGenerated != tIsGenerated:
+                       self.ddldiffs = self.ddldiffs + 1
+                       self.logit (DIFF, '%20s: Table (%35s) Is Generated mismatch for column (%s) %s<>%s' % (typediff, sTableName, sColumnName, sIsGenerated, tIsGenerated))                   
+               cnt2 = cnt2 + 1
+            cnt1 = cnt1 + 1
             
         print ('')
         return RC_OK
@@ -1484,6 +1507,9 @@ def setupOptionParser():
     parser.add_option("-t", "--scantype", dest="scantype",   help="scantype [SimpleScan | DetailedScan]", default="",metavar="SCANTYPE")
     parser.add_option("-l", "--log",      dest="logging",    help="log diffs to output file",default=False, action="store_true")
     parser.add_option("-v", "--verbose", dest="verbose",     help="Verbose Output",default=False, action="store_true")
+    
+    parser.add_option("-r", "--ignore_rowcounts", dest="ignore_rowcounts",  help="Ignore row counts diffs",default=False, action="store_true")
+    parser.add_option("-i", "--ignore_indexes",   dest="ignore_indexes",    help="Ignore index diffs",default=False, action="store_true")
 
     return parser
 
@@ -1510,9 +1536,10 @@ pg.Tuser             = options.tuser
 pg.Tdb               = options.tdb
 pg.Tschema           = options.tschema
 pg.scantype          = (options.scantype).lower()
-pg_scantype          = options.scantype
 pg.logging           = options.logging
 pg.verbose           = options.verbose
+pg.IgnoreRowCounts   = options.ignore_rowcounts
+pg.IgnoreIndexes     = options.ignore_indexes
 
 # check parms
 if pg.Suser == '':
@@ -1586,18 +1613,23 @@ if rc == RC_ERR:
     sys.exit(FAIL)    
 
 # Phase 4: Compare Key/Indexes
-pg.logit(INFO, "PHASE 4: Comparing Constraints/Indexes...")
-rc = pg.CompareKeysIndexes()
-if rc == RC_ERR:
-    # error has already been logged
-    pg.logit(INFO, 'CompareKeysIndexes Errror.')
-    pg.CloseStuff()
-    sys.exit(FAIL)    
+if pg.IgnoreIndexes:
+    pg.logit(INFO, 'Bypassing Index comparison...')
+else:
+    pg.logit(INFO, "PHASE 4: Comparing Constraints/Indexes...")
+    rc = pg.CompareKeysIndexes()
+    if rc == RC_ERR:
+        # error has already been logged
+        pg.logit(INFO, 'CompareKeysIndexes Errror.')
+        pg.CloseStuff()
+        sys.exit(FAIL)    
 
 # Phase 5: Compare Row Counts
-if pg_scantype == 'DetailedScan':
+if pg.IgnoreRowCounts:
+    pg.logit(INFO, 'Bypassing Row Count comparison...')
+else:
     pg.logit(INFO, "PHASE 5: Comparing Row Counts...")
-    if pg_scantype == 'simplescan':
+    if pg.IgnoreRows_scantype == 'simplescan':
         pg.logit(WARN, '*** SimpleScan: Row Counts are statistically computed so make sure you run ANALYZE beforehand. ***')
     rc = pg.CompareRowCounts()
     if rc == RC_ERR:
@@ -1714,3 +1746,4 @@ Select object, count(*) from details group by 1 order by 1;
 
 
 '''
+
