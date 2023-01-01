@@ -8,7 +8,7 @@ GNU V3 and MIT licenses are conveyed accordingly.
 Bugs can be reported @ michaeldba@sqlexec.com
 
 ## Example Usage:
-pg_match.py -t simplescan --Shost localhost --Sport 5414 --Suser postgres --Sdb clone_testing --Sschema sample --Thost localhost --Tport 5414 --Tuser postgres --Tdb clone_testing --Tschema sample_clone1
+pg_match.py -t simplescan --Shost localhost --Sport 5414 --Suser postgres --Sdb clone_testing --Sschema sample --Thost localhost --Tport 5414 --Tuser postgres --Tdb clone_testing --Tschema clone1
 
 ## Screen Shot
 
