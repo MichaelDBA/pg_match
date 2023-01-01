@@ -976,11 +976,11 @@ class maint:
               
             # find the index of corresponding target table            
             try:
-	        x = [ x[0] for x in Trows].index(sTableName)
-	    except ValueError:
-	        # not found, so just ignore
-	        #print ('bypassing table not found: %s' % sTableName)
-	        continue
+                x = [ x[0] for x in Trows].index(sTableName)
+            except ValueError:
+                # not found, so just ignore
+                #print ('bypassing table not found: %s' % sTableName)
+                continue
             tTableName  = Trows[x][0]	        
             #print ('found table match (%s/%s) in target array' % (sTableName, tTableName))	        
             
@@ -1208,7 +1208,7 @@ class maint:
     
         # Now do INDEX checks
         aschema = self.Sschema
-        if self.pg_version_numS < 1100000:
+        if self.pg_version_numS < 110000:
             # cannot use indnkeyatts column which is missing in PG v10
             sql = "SELECT c.relname AS tablename, i.relname AS indexname, x.indnatts natts, '' as nkeyatts, x.indisunique isunique, x.indisprimary isprimary, x.indisexclusion isexclusion, " \
                   "x.indimmediate isimmediate, x.indisclustered isclustered, x.indisvalid isvalid, x.indisready isready, x.indislive islive, x.indkey, " \
@@ -1236,7 +1236,7 @@ class maint:
             self.logit(WARN, msg)
 
         aschema = self.Tschema
-        if self.pg_version_numT < 1100000:
+        if self.pg_version_numT < 110000:
             # cannot use indnkeyatts column which is missing in PG v10
             sql = "SELECT c.relname AS tablename, i.relname AS indexname, x.indnatts natts, '' as nkeyatts, x.indisunique isunique, x.indisprimary isprimary, x.indisexclusion isexclusion, " \
                   "x.indimmediate isimmediate, x.indisclustered isclustered, x.indisvalid isvalid, x.indisready isready, x.indislive islive, x.indkey, " \
@@ -1270,7 +1270,7 @@ class maint:
             sIndexName    = sRow[1]
             sNatts        = sRow[2]
 
-            if self.pg_version_numS < 1100000 or self.pg_version_numT < 1100000:
+            if self.pg_version_numS < 110000 or self.pg_version_numT < 110000:
                 sKeyAtts      = ''
             else:
                 sKeyAtts      = sRow[3]
@@ -1294,7 +1294,7 @@ class maint:
                 tNatts        = tRow[2]
                 tKeyAtts      = tRow[3]
 
-                if self.pg_version_numS < 1100000 or self.pg_version_numT < 1100000:
+                if self.pg_version_numS < 110000 or self.pg_version_numT < 110000:
                     tKeyAtts      = ''
                 else:
                     tKeyAtts      = sRow[3]
@@ -1741,7 +1741,7 @@ if pg.IgnoreFuncs:
     pg.logit(INFO, 'PHASE 5: Bypassing Func/Proc comparison...')
     print('')
 else:
-    if pg.pg_version_numS < 1100000 or pg.pg_version_numT < 1100000:
+    if pg.pg_version_numS < 110000 or pg.pg_version_numT < 110000:
         pg.logit(WARN, 'PHASE 5: Bypassing Func/Proc comparison due to incompatible PG Version, v10...')    
         print('')
     else:    
