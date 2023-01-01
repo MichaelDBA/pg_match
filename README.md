@@ -15,7 +15,7 @@ pg_match.py -t simplescan --Shost localhost --Sport 5414 --Suser postgres --Sdb 
 ![image](https://user-images.githubusercontent.com/12436545/187948655-a1717907-646a-4464-8756-561f5f23e830.png)
 
 ## Parameters
-<br/>
+
 `-t --scantype`          SimpleScan or DetailedScan
 <br/>
 `-H --Shost`            Source host
