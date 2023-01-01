@@ -61,7 +61,7 @@ Regarding the scantype parameter (**-t** or **--scantype**), **SimpleScan** uses
 <br/>
 
 ## Assumptions
-Currently on works for the following objects:
+Currently works for the following objects:
 * tables
 * views
 * columns
