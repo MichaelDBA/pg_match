@@ -58,4 +58,9 @@ pg_match.py -t simplescan --Shost localhost --Sport 5414 --Suser postgres --Sdb 
 <br/>
 
 ## Assumptions
-None at this time
+Currently on works for the following objects:
+* tables
+* views
+* columns
+* indexes
+* functions and procedures
