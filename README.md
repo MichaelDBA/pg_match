@@ -14,9 +14,12 @@ pg_match.py -t simplescan --Shost localhost --Sport 5414 --Suser postgres --Sdb 
 
 ![image](https://user-images.githubusercontent.com/12436545/187948655-a1717907-646a-4464-8756-561f5f23e830.png)
 
+## Overview
+**SimpleScan** uses row estimates (pg_class/pg_stat_user_tables) whereas **DetailedScan** uses actual row count SQL. So for **SimpleScan** you should analyze all your schema tables beforehand or you will get a lot of differences.
+
 ## Parameters
 
-`-t --scantype`          SimpleScan or DetailedScan
+`-t --scantype`          SimpleScan or DetailedScan 
 <br/>
 `-H --Shost`            Source host
 <br/>
