@@ -57,7 +57,7 @@ Regarding the scantype parameter (-t or --scantype), **SimpleScan** uses row est
 1. python 2.7 or above
 2. python packages: psycopg2
 3. Works on Linux and Windows.
-4. PostgreSQL versions 9.6 and up
+4. PostgreSQL versions 10+
 <br/>
 
 ## Assumptions
