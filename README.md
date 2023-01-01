@@ -65,4 +65,4 @@ Currently on works for the following objects:
 * indexes and constraints
 * functions and procedures
 * row counts (implicit and direct)
-* 
+
