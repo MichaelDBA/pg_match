@@ -16,9 +16,8 @@ pg_match.py -t simplescan --Shost localhost --Sport 5414 --Suser postgres --Sdb 
 
 ## Parameters
 <br/>
-`-H --host`              host name
-<br/>
 `-d --dbname`            database name
+
 `-t --scantype`          SimpleScan or DetailedScan
 <br/>
 `-H --Shost`            Source host
