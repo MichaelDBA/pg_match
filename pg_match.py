@@ -924,7 +924,7 @@ class maint:
                 continue
             lastTableName = sTableName    
             
-            sql1 = "SELECT table_name, string_agg(column_name, ',' ORDER BY column_name) columns FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' GROUP BY 1" % (self.Sschema, sTableName);
+            sql1 = "SELECT table_name, string_agg(column_name, ',' ORDER BY column_name) as columns FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' GROUP BY 1" % (self.Sschema, sTableName);
             try:              
                 self.curS.execute(sql1)
             except Exception as error:
@@ -937,7 +937,7 @@ class maint:
                 self.logit(ERR, msg)
                 return RC_ERR    
             sColumns = arow[1]
-            sql2 = "SELECT table_name, string_agg(column_name, ',' ORDER BY column_name) columns FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' GROUP BY 1" % (self.Tschema, sTableName);
+            sql2 = "SELECT table_name, string_agg(column_name, ',' ORDER BY column_name) as columns FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' GROUP BY 1" % (self.Tschema, sTableName);
             try:              
                 self.curT.execute(sql2)
             except Exception as error:
@@ -1060,7 +1060,7 @@ class maint:
 	      "CASE WHEN co.confupdtype = 'a' THEN 'NO ACTION' WHEN co.confupdtype = 'r' THEN 'RESTRICT' WHEN co.confupdtype = 'c' THEN 'CASCADE' WHEN co.confupdtype = 'n' THEN 'SET NULL' WHEN co.confupdtype = 'd' THEN 'SET DEFAULT' END confupdtype, " \
   	      "CASE WHEN co.confdeltype = 'a' THEN 'NO ACTION' WHEN co.confdeltype = 'r' THEN 'RESTRICT' WHEN co.confdeltype = 'c' THEN 'CASCADE' WHEN co.confdeltype = 'n' THEN 'SET NULL' WHEN co.confdeltype = 'd' THEN 'SET DEFAULT' END confdeltype, " \
 	      "CASE WHEN co.confmatchtype = 'f' THEN 'FULL' WHEN co.confmatchtype = 'p' THEN 'PARTIAL' WHEN co.confmatchtype = 's' THEN 'SIMPLE' END confmatchtype, " \
-	      "co.conkey, co.confkey, pg_get_constraintdef(co.oid), string_agg(con.column_name, ',' ORDER BY co.conkey) columns " \
+	      "co.conkey, co.confkey, pg_get_constraintdef(co.oid), string_agg(con.column_name, ',' ORDER BY co.conkey) as columns " \
 	      "FROM pg_constraint co JOIN pg_namespace n ON (co.connamespace = n.oid) JOIN pg_class c1 ON (co.conrelid = c1.oid AND n.oid = c1.relnamespace) " \
 	      "LEFT JOIN information_schema.constraint_column_usage con ON co.conname = con.constraint_name AND n.nspname = con.constraint_schema " \
 	      "LEFT JOIN pg_attribute a ON (a.attrelid = c1.oid AND a.attname = con.column_name) " \
@@ -1083,7 +1083,7 @@ class maint:
 	      "CASE WHEN co.confupdtype = 'a' THEN 'NO ACTION' WHEN co.confupdtype = 'r' THEN 'RESTRICT' WHEN co.confupdtype = 'c' THEN 'CASCADE' WHEN co.confupdtype = 'n' THEN 'SET NULL' WHEN co.confupdtype = 'd' THEN 'SET DEFAULT' END confupdtype, " \
   	      "CASE WHEN co.confdeltype = 'a' THEN 'NO ACTION' WHEN co.confdeltype = 'r' THEN 'RESTRICT' WHEN co.confdeltype = 'c' THEN 'CASCADE' WHEN co.confdeltype = 'n' THEN 'SET NULL' WHEN co.confdeltype = 'd' THEN 'SET DEFAULT' END confdeltype, " \
 	      "CASE WHEN co.confmatchtype = 'f' THEN 'FULL' WHEN co.confmatchtype = 'p' THEN 'PARTIAL' WHEN co.confmatchtype = 's' THEN 'SIMPLE' END confmatchtype, " \
-	      "co.conkey, co.confkey, pg_get_constraintdef(co.oid), string_agg(con.column_name, ',' ORDER BY co.conkey) columns " \
+	      "co.conkey, co.confkey, pg_get_constraintdef(co.oid), string_agg(con.column_name, ',' ORDER BY co.conkey) as columns " \
 	      "FROM pg_constraint co JOIN pg_namespace n ON (co.connamespace = n.oid) JOIN pg_class c1 ON (co.conrelid = c1.oid AND n.oid = c1.relnamespace) " \
 	      "LEFT JOIN information_schema.constraint_column_usage con ON co.conname = con.constraint_name AND n.nspname = con.constraint_schema " \
 	      "LEFT JOIN pg_attribute a ON (a.attrelid = c1.oid AND a.attname = con.column_name) " \
@@ -1208,12 +1208,21 @@ class maint:
     
         # Now do INDEX checks
         aschema = self.Sschema
-        sql = "SELECT c.relname AS tablename, i.relname AS indexname, x.indnatts natts, x.indnkeyatts nkeyatts, x.indisunique isunique, x.indisprimary isprimary, x.indisexclusion isexclusion, " \
-              "x.indimmediate isimmediate, x.indisclustered isclustered, x.indisvalid isvalid, x.indisready isready, x.indislive islive, x.indkey, " \
-	      "array_to_string(ARRAY(SELECT pg_get_indexdef(i.oid, k + 1, true) FROM generate_subscripts(x.indkey, 1) as k ORDER BY k), ',') keycols, pg_get_indexdef(i.oid) AS indexdef " \
-              "FROM ((((pg_index x JOIN pg_class c ON ((c.oid = x.indrelid))) JOIN pg_class i ON ((i.oid = x.indexrelid))) " \
-              "LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace))) LEFT JOIN pg_tablespace t ON ((t.oid = i.reltablespace))) " \
-              "WHERE n.nspname = '%s' AND ((c.relkind = 'r'::""char"") AND (i.relkind = 'i'::""char"")) order by 1,2" % aschema
+        if self.pg_version_numS < 1100000:
+            # cannot use indnkeyatts column which is missing in PG v10
+            sql = "SELECT c.relname AS tablename, i.relname AS indexname, x.indnatts natts, '' as nkeyatts, x.indisunique isunique, x.indisprimary isprimary, x.indisexclusion isexclusion, " \
+                  "x.indimmediate isimmediate, x.indisclustered isclustered, x.indisvalid isvalid, x.indisready isready, x.indislive islive, x.indkey, " \
+                  "array_to_string(ARRAY(SELECT pg_get_indexdef(i.oid, k + 1, true) FROM generate_subscripts(x.indkey, 1) as k ORDER BY k), ',') keycols, pg_get_indexdef(i.oid) AS indexdef " \
+                  "FROM ((((pg_index x JOIN pg_class c ON ((c.oid = x.indrelid))) JOIN pg_class i ON ((i.oid = x.indexrelid))) " \
+                  "LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace))) LEFT JOIN pg_tablespace t ON ((t.oid = i.reltablespace))) " \
+                  "WHERE n.nspname = '%s' AND ((c.relkind = 'r'::""char"") AND (i.relkind = 'i'::""char"")) order by 1,2" % aschema
+        else:
+            sql = "SELECT c.relname AS tablename, i.relname AS indexname, x.indnatts natts, x.indnkeyatts nkeyatts, x.indisunique isunique, x.indisprimary isprimary, x.indisexclusion isexclusion, " \
+                  "x.indimmediate isimmediate, x.indisclustered isclustered, x.indisvalid isvalid, x.indisready isready, x.indislive islive, x.indkey, " \
+                  "array_to_string(ARRAY(SELECT pg_get_indexdef(i.oid, k + 1, true) FROM generate_subscripts(x.indkey, 1) as k ORDER BY k), ',') keycols, pg_get_indexdef(i.oid) AS indexdef " \
+                  "FROM ((((pg_index x JOIN pg_class c ON ((c.oid = x.indrelid))) JOIN pg_class i ON ((i.oid = x.indexrelid))) " \
+                  "LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace))) LEFT JOIN pg_tablespace t ON ((t.oid = i.reltablespace))) " \
+                  "WHERE n.nspname = '%s' AND ((c.relkind = 'r'::""char"") AND (i.relkind = 'i'::""char"")) order by 1,2" % aschema
         try:              
             self.curS.execute(sql)
         except Exception as error:
@@ -1227,12 +1236,21 @@ class maint:
             self.logit(WARN, msg)
 
         aschema = self.Tschema
-        sql = "SELECT c.relname AS tablename, i.relname AS indexname, x.indnatts natts, x.indnkeyatts nkeyatts, x.indisunique isunique, x.indisprimary isprimary, x.indisexclusion isexclusion, " \
-              "x.indimmediate isimmediate, x.indisclustered isclustered, x.indisvalid isvalid, x.indisready isready, x.indislive islive, x.indkey, " \
-	      "array_to_string(ARRAY(SELECT pg_get_indexdef(i.oid, k + 1, true) FROM generate_subscripts(x.indkey, 1) as k ORDER BY k), ',') keycols, pg_get_indexdef(i.oid) AS indexdef " \
-              "FROM ((((pg_index x JOIN pg_class c ON ((c.oid = x.indrelid))) JOIN pg_class i ON ((i.oid = x.indexrelid))) " \
-              "LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace))) LEFT JOIN pg_tablespace t ON ((t.oid = i.reltablespace))) " \
-              "WHERE n.nspname = '%s' AND ((c.relkind = 'r'::""char"") AND (i.relkind = 'i'::""char"")) order by 1,2" % aschema
+        if self.pg_version_numT < 1100000:
+            # cannot use indnkeyatts column which is missing in PG v10
+            sql = "SELECT c.relname AS tablename, i.relname AS indexname, x.indnatts natts, '' as nkeyatts, x.indisunique isunique, x.indisprimary isprimary, x.indisexclusion isexclusion, " \
+                  "x.indimmediate isimmediate, x.indisclustered isclustered, x.indisvalid isvalid, x.indisready isready, x.indislive islive, x.indkey, " \
+                  "array_to_string(ARRAY(SELECT pg_get_indexdef(i.oid, k + 1, true) FROM generate_subscripts(x.indkey, 1) as k ORDER BY k), ',') keycols, pg_get_indexdef(i.oid) AS indexdef " \
+                  "FROM ((((pg_index x JOIN pg_class c ON ((c.oid = x.indrelid))) JOIN pg_class i ON ((i.oid = x.indexrelid))) " \
+                  "LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace))) LEFT JOIN pg_tablespace t ON ((t.oid = i.reltablespace))) " \
+                  "WHERE n.nspname = '%s' AND ((c.relkind = 'r'::""char"") AND (i.relkind = 'i'::""char"")) order by 1,2" % aschema
+        else:
+            sql = "SELECT c.relname AS tablename, i.relname AS indexname, x.indnatts natts, x.indnkeyatts nkeyatts, x.indisunique isunique, x.indisprimary isprimary, x.indisexclusion isexclusion, " \
+                  "x.indimmediate isimmediate, x.indisclustered isclustered, x.indisvalid isvalid, x.indisready isready, x.indislive islive, x.indkey, " \
+                  "array_to_string(ARRAY(SELECT pg_get_indexdef(i.oid, k + 1, true) FROM generate_subscripts(x.indkey, 1) as k ORDER BY k), ',') keycols, pg_get_indexdef(i.oid) AS indexdef " \
+                  "FROM ((((pg_index x JOIN pg_class c ON ((c.oid = x.indrelid))) JOIN pg_class i ON ((i.oid = x.indexrelid))) " \
+                  "LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace))) LEFT JOIN pg_tablespace t ON ((t.oid = i.reltablespace))) " \
+                  "WHERE n.nspname = '%s' AND ((c.relkind = 'r'::""char"") AND (i.relkind = 'i'::""char"")) order by 1,2" % aschema
         try:              
             self.curT.execute(sql)
         except Exception as error:
@@ -1251,7 +1269,12 @@ class maint:
             sTableName    = sRow[0]
             sIndexName    = sRow[1]
             sNatts        = sRow[2]
-            sKeyAtts      = sRow[3]
+
+            if self.pg_version_numS < 1100000 or self.pg_version_numT < 1100000:
+                sKeyAtts      = ''
+            else:
+                sKeyAtts      = sRow[3]
+            
             sIsUnique     = sRow[4]
             sIsPrimary    = sRow[5]
             sIsExclusion  = sRow[6]
@@ -1270,6 +1293,12 @@ class maint:
                 tIndexName    = tRow[1]
                 tNatts        = tRow[2]
                 tKeyAtts      = tRow[3]
+
+                if self.pg_version_numS < 1100000 or self.pg_version_numT < 1100000:
+                    tKeyAtts      = ''
+                else:
+                    tKeyAtts      = sRow[3]
+
                 tIsUnique     = tRow[4]
                 tIsPrimary    = tRow[5]
                 tIsExclusion  = tRow[6]
@@ -1712,13 +1741,17 @@ if pg.IgnoreFuncs:
     pg.logit(INFO, 'PHASE 5: Bypassing Func/Proc comparison...')
     print('')
 else:
-    pg.logit(INFO, "PHASE 5: Comparing Funcs/Procs...")
-    rc = pg.CompareFuncsProcs()
-    if rc == RC_ERR:
-        # error has already been logged
-        pg.logit(INFO, 'CompareFuncsProcs Errror.')
-        pg.CloseStuff()
-        sys.exit(FAIL)    
+    if pg.pg_version_numS < 1100000 or pg.pg_version_numT < 1100000:
+        pg.logit(WARN, 'PHASE 5: Bypassing Func/Proc comparison due to incompatible PG Version, v10...')    
+        print('')
+    else:    
+        pg.logit(INFO, "PHASE 5: Comparing Funcs/Procs...")
+        rc = pg.CompareFuncsProcs()
+        if rc == RC_ERR:
+            # error has already been logged
+            pg.logit(INFO, 'CompareFuncsProcs Errror.')
+            pg.CloseStuff()
+            sys.exit(FAIL)    
 
 # Phase 6: Compare Row Counts
 if pg.IgnoreRowCounts:
