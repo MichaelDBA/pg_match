@@ -62,5 +62,7 @@ Currently on works for the following objects:
 * tables
 * views
 * columns
-* indexes
+* indexes and constraints
 * functions and procedures
+* row counts (implicit and direct)
+* 
