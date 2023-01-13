@@ -39,6 +39,7 @@
 # 2023-01-02    Michael Vitale    version 3.0: Added logic for funcs/procs diffs.
 #                                              Fixed column comparison for column differences, not attribute ones which are handled correctly.
 #                                              Fixed column attribute slowness
+# 2023-01-13    Michael Vitale    version 3.1  Fixed logic for handling cases where no objects found in a particular class
 ##########################################################################################
 import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass
 from optparse  import OptionParser
@@ -46,10 +47,10 @@ from decimal import *
 import psycopg2
 
 DESCRIPTION="This python utility program compares schemas for a specific database."
-VERSION    = 3.0
+VERSION    = 3.1
 PROGNAME   = "pg_match"
-ADATE      = "January 2, 2023"
-PROGDATE   = "2023-01-02"
+ADATE      = "January 13, 2023"
+PROGDATE   = "2023-01-13"
 
 #Globals
 FAIL = 1
@@ -97,6 +98,11 @@ class maint:
         self.Tdb               = ''
         self.Tschema           = ''        
         self.ddldiffs          = 0;
+        self.tablediffs        = 0;
+        self.columndiffs       = 0;
+        self.indexdiffs        = 0;
+        self.funcdiffs         = 0;
+        self.viewdiffs         = 0;
         self.rowcntdiffs       = 0;
         self.is_prokind        = True;
         self.pg_version_numS   = 0;
@@ -355,7 +361,7 @@ class maint:
 
         arow = self.curS.fetchone()
         if len(arow) == 0:
-            msg="Source Object Count Diff Error: No rows returned."
+            msg="Source Object Count Diff Notice: No rows returned."
             self.logit(ERR, msg)
             return RC_ERR    
         #print (arow)
@@ -686,9 +692,9 @@ class maint:
 
         Srows = self.curS.fetchall()
         if len(Srows) == 0:
-            msg="Source Table Diff Error: No rows returned."
-            self.logit(ERR, msg)
-            return RC_ERR    
+            msg="Source Table Diff Notice: No rows returned."
+            self.logit(WARN, msg)
+            # return RC_ERR    
 
         aschema = self.Tschema
         sql = "SELECT tablename, tableowner, tablespace, hasindexes, hasrules, hastriggers, rowsecurity FROM pg_tables WHERE schemaname = '%s' ORDER BY 1" % aschema;
@@ -701,9 +707,9 @@ class maint:
 
         Trows = self.curT.fetchall()
         if len(Trows) == 0:
-            msg="Target Table Diff Error: No rows returned."
-            self.logit(ERR, msg)
-            return RC_ERR    
+            msg="Target Table Diff Notice: No rows returned."
+            self.logit(WARN, msg)
+            #return RC_ERR    
 
         cnt = 0
         typediff = 'Tables Diff:'
@@ -892,9 +898,9 @@ class maint:
 
         Srows = self.curS.fetchall()
         if len(Srows) == 0:
-            msg="Source Column Diff Error: No rows returned."
-            self.logit(ERR, msg)
-            return RC_ERR    
+            msg="Source Column Diff Notice: No rows returned."
+            self.logit(WARN, msg)
+            #return RC_ERR    
 
         aschema = self.Tschema
         sql = "SELECT table_name, ordinal_position, column_name, COALESCE(column_default, ''), is_nullable, data_type, COALESCE(character_maximum_length, -1), " \
@@ -910,9 +916,9 @@ class maint:
         Trows = self.curT.fetchall()
         TargetRows = len(Trows)
         if TargetRows == 0:
-            msg="Target Column Diff Error: No rows returned."
-            self.logit(ERR, msg)
-            return RC_ERR    
+            msg="Target Column Diff Notice: No rows returned."
+            self.logit(WARN, msg)
+            #return RC_ERR    
 
         # loop only looking for column differences
         typediff = 'Columns Diff'
@@ -1074,7 +1080,7 @@ class maint:
 
         Srows = self.curS.fetchall()
         if len(Srows) == 0:
-            msg="Source Constraints Diff Error: No rows returned."
+            msg="Source Constraints Diff Notice: No rows returned."
             self.logit(WARN, msg)
 
         aschema = self.Tschema
@@ -1097,7 +1103,7 @@ class maint:
 
         Trows = self.curT.fetchall()
         if len(Trows) == 0:
-            msg="Target Constraints Diff Error: No rows returned."
+            msg="Target Constraints Diff Notice: No rows returned."
             self.logit(WARN, msg)
 
         # compare on tablename, constraintname
@@ -1180,7 +1186,8 @@ class maint:
         # Now just see if tablename/constraintname pairs are not found in source when compared from target.
         for tRow in Trows:
             tTableName      = tRow[0]
-            tConstraintName = tRow[1]        
+            tConstraintName = tRow[1]  
+            tConType        = tRow[2]
             bFoundTable = False
             bFoundConstraint = False
             for sRow in Srows:
@@ -1232,7 +1239,7 @@ class maint:
 
         Srows = self.curS.fetchall()
         if len(Srows) == 0:
-            msg="Source Indexes Diff Error: No rows returned."
+            msg="Source Indexes Diff Notice: No rows returned."
             self.logit(WARN, msg)
 
         aschema = self.Tschema
@@ -1260,7 +1267,7 @@ class maint:
 
         Trows = self.curT.fetchall()
         if len(Trows) == 0:
-            msg="Target Indexes Diff Error: No rows returned."
+            msg="Target Indexes Diff Notice: No rows returned."
             self.logit(WARN, msg)
         
         # compare on tablename, indexname
@@ -1374,7 +1381,7 @@ class maint:
                 msg = '%20s       Target index name not found. Table(%35s)  Index(%s)' % (typediff, sTableName, sIndexName)
                 self.ddldiffs = self.ddldiffs + 1
                 self.logit(DIFF, msg)                               
-        if not bFoundTable:
+        if not bFoundTable and len(Srows) > 0:
             msg = '%20s          Target index table not found. Table(%35s).  Missing at least one index:%s' % (typediff, sTableName, sIndexName)
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)                                       
@@ -1510,9 +1517,9 @@ class maint:
 
         Srows = self.curS.fetchall()
         if len(Srows) == 0:
-            msg="Source Row Counts Diff Error: No rows returned."
+            msg="Source Row Counts Diff Notice: No rows returned."
             self.logit(ERR, msg)
-            return RC_ERR    
+            #return RC_ERR    
     
         '''
         SELECT a.tblname, a.rowcnt, b.tblname, b.rowcnt from 
@@ -1536,9 +1543,9 @@ class maint:
     
         Trows = self.curT.fetchall()
         if len(Trows) == 0:
-            msg="Target Row Counts Diff Error: No rows returned."
+            msg="Target Row Counts Diff Notice: No rows returned."
             self.logit(ERR, msg)
-            return RC_ERR    
+            #return RC_ERR    
 
         cnt1 = 0
         diffs = 0
