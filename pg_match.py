@@ -1179,9 +1179,11 @@ class maint:
                     self.ddldiffs = self.ddldiffs + 1
                     self.logit(DIFF, msg)                               
             if not bFoundTable:
-                msg =     '%20s Target constraint table not found. Table(%35s)  Missing at least one constraint:%s-%s' % (typediff, sTableName, sConType, sConstraintName)
-                self.ddldiffs = self.ddldiffs + 1
-                self.logit(DIFF, msg)                               
+                # dont treat as diff since we already caught the table not being there in table compare
+                #msg =     '%20s Target constraint table not found. Table(%35s)  Missing at least one constraint:%s-%s' % (typediff, sTableName, sConType, sConstraintName)
+                #self.ddldiffs = self.ddldiffs + 1
+                #self.logit(DIFF, msg)                               
+                pass
                 
         # Now just see if tablename/constraintname pairs are not found in source when compared from target.
         for tRow in Trows:
@@ -1209,9 +1211,11 @@ class maint:
                 self.ddldiffs = self.ddldiffs + 1
                 self.logit(DIFF, msg)                                   
             if not bFoundTable:
-                msg = '%20s Source constraint table not found. Table(%35s)  Missing at least one constraint:%s-%s' % (typediff, tTableName, tConType, tConstraintName)
-                self.ddldiffs = self.ddldiffs + 1
-                self.logit(DIFF, msg)
+                # dont treat as diff since we already caught the table not being there in table compare
+                #msg = '%20s Source constraint table not found. Table(%35s)  Missing at least one constraint:%s-%s' % (typediff, tTableName, tConType, tConstraintName)
+                #self.ddldiffs = self.ddldiffs + 1
+                #self.logit(DIFF, msg)
+                pass
     
         # Now do INDEX checks
         aschema = self.Sschema
