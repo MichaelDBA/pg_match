@@ -1,6 +1,7 @@
 #!/usr/bin/env python2
 #!/usr/bin/env python3
 #!/usr/bin/env python
+from __future__ import print_function
 ##########################################################################################
 # File Name: pg_match.py
 # Description:
@@ -40,17 +41,18 @@
 #                                              Fixed column comparison for column differences, not attribute ones which are handled correctly.
 #                                              Fixed column attribute slowness
 # 2023-01-13    Michael Vitale    version 3.1  Fixed logic for handling cases where no objects found in a particular class
+# 2023-01-18    Michael Vitale    version 3.2  Enhancement: add bypass columns parm, inplace updates for row counts during DetailedScan, added signal handler for ctrl-c interruptions
 ##########################################################################################
-import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass
+import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass, signal
 from optparse  import OptionParser
 from decimal import *
 import psycopg2
 
 DESCRIPTION="This python utility program compares schemas for a specific database."
-VERSION    = 3.1
+VERSION    = 3.2
 PROGNAME   = "pg_match"
-ADATE      = "January 13, 2023"
-PROGDATE   = "2023-01-13"
+ADATE      = "January 18, 2023"
+PROGDATE   = "2023-01-18"
 
 #Globals
 FAIL = 1
@@ -71,10 +73,28 @@ ERR   ="ERROR "
 FATAL ="FATAL "
 DIFF  ="DIFF  "
 
+def signal_handler(signal, frame):
+     print('User-interrupted!')
+     # sys.exit only creates an exception, it doesn't really exit!
+     #sys.exit(1)
+     if sys.platform == 'win32':
+         sys._exit(1)
+     else:
+         #For Linux:
+         # v4.8 fix
+         #os.kill(os.getpid(), signal.SIGINT)
+         # --> Exception: <type 'exceptions.AttributeError'> *** 'int' object has no attribute 'SIGINT'
+         #os.kill(os.getpid(), signal.SIGTERM)
+         # --> Exception: <type 'exceptions.AttributeError'> *** 'int' object has no attribute 'SIGTERM'
+         #sys._exit(1)
+         # --> AttributeError: 'module' object has no attribute '_exit'
+         exit(1)
+         
 class maint:
     def __init__(self):
-        self.connS             = False
-        self.connT             = False
+        self.PythonVersion     =  sys.version_info[0]
+        self.connS             = None
+        self.connT             = None
         self.curS              = False
         self.curT              = False
         self.connstrS          = ''
@@ -139,6 +159,12 @@ class maint:
     def CloseStuff(self):
 
         # rollback any unintentional changes
+        if self.connS is None:
+            # nothing to rollback
+            if self.flog:
+                self.flog.close()            
+            return    
+            
         if self.connS is not None:
             self.connS.rollback()
         if self.connT is not None:            
@@ -1520,10 +1546,12 @@ class maint:
             return RC_ERR
 
         Srows = self.curS.fetchall()
+        sTotalRows = len(Srows)
         if len(Srows) == 0:
             msg="Source Row Counts Diff Notice: No rows returned."
             self.logit(ERR, msg)
             #return RC_ERR    
+            
     
         '''
         SELECT a.tblname, a.rowcnt, b.tblname, b.rowcnt from 
@@ -1555,6 +1583,8 @@ class maint:
         diffs = 0
         typediff = 'Row Counts Diff:'
         for sRow in Srows:
+            cnt1 = cnt1 + 1
+                
             sTable1      = sRow[0]
             sCount1      = sRow[1]
             sTable2      = sRow[2]
@@ -1582,8 +1612,12 @@ class maint:
                         if pg.scantype != 'detailedscan':
                             diffs = diffs + 1
                             self.rowcntdiffs = self.rowcntdiffs + 1
-                            self.logit (DIFF, '%20s %-35s rowcnts mismatch %08d<>%08d' % (typediff, sTable1, sCount1, tCount1))
+                            self.logit (DIFF, '%20s %-35s rowcnts mismatch %09d<>%09d  diff=%09d' % (typediff, sTable1, sCount1, tCount1, abs(sCount1 - tCount1)))
                         else:
+                            #if self.PythonVersion == 2:
+                            sys.stdout.write('\r>> Processing table %30s (%d/%d) diffs (%d)    ' % (sTable1, cnt1, sTotalRows, self.rowcntdiffs))
+                            sys.stdout.flush()
+
                             aschema = self.Sschema
                             sql = 'SELECT COUNT(*) from %s."%s"' % (aschema, sTable1)
                             try:              
@@ -1605,7 +1639,8 @@ class maint:
                             if Srow[0] != Trow[0]:
                                 diffs = diffs + 1
                                 self.rowcntdiffs = self.rowcntdiffs + 1
-                                self.logit (DIFF, '%20s %-35s Real rowcnts mismatch %08d<>%08d' % (typediff, sTable1, Srow[0], Trow[0]))
+                                self.logit (DIFF, '%20s %-35s Real rowcnts mismatch %09d<>%09d  diff=$09d' % (typediff, sTable1, Srow[0], Trow[0], abs(Srow[0] - Trow[0])))
+                    break        
         print ('')
         return RC_OK    
 
@@ -1631,12 +1666,22 @@ def setupOptionParser():
     parser.add_option("-r", "--ignore_rowcounts", dest="ignore_rowcounts",  help="Ignore row counts diffs",default=False, action="store_true")
     parser.add_option("-i", "--ignore_indexes",   dest="ignore_indexes",    help="Ignore index diffs",default=False, action="store_true")
     parser.add_option("-f", "--ignore_funcs",     dest="ignore_funcs",      help="Ignore func/proc diffs",default=False, action="store_true")
+    parser.add_option("-c", "--ignore_columns",   dest="ignore_columns",    help="Ignore column diffs",default=False, action="store_true")
+    parser.add_option("-x", "--print_help",       dest="print_help",        help="Print Help",default=False, action="store_true")
     
     return parser
 
 ####################
 # MAIN ENTRY POINT #
 ####################
+
+# Register the signal handler for CTRL-C logic
+if sys.platform != 'win32':
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.siginterrupt(signal.SIGINT, False)        
+else:
+    # v4 fix:
+    signal.signal(signal.SIGINT, signal_handler)
 
 dt_started = datetime.datetime.utcnow()
 optionParser   = setupOptionParser()
@@ -1662,6 +1707,12 @@ pg.verbose           = options.verbose
 pg.IgnoreRowCounts   = options.ignore_rowcounts
 pg.IgnoreIndexes     = options.ignore_indexes
 pg.IgnoreFuncs       = options.ignore_funcs
+pg.IgnoreColumns     = options.ignore_columns
+pg.PrintHelp         = options.print_help
+
+if pg.PrintHelp:
+  optionParser.print_help()
+  sys.exit(SUCCESS)
 
 # check parms
 if pg.Suser == '':
@@ -1726,13 +1777,17 @@ if rc == RC_ERR:
     sys.exit(FAIL)
 
 # Phase 3: Compare Columns
-pg.logit(INFO, "PHASE 3: Comparing Columns...")
-rc = pg.CompareColumns()
-if rc == RC_ERR:
-    # error has already been logged
-    pg.logit(INFO, 'CompareColumns() Errror.')
-    pg.CloseStuff()
-    sys.exit(FAIL)    
+if pg.IgnoreColumns:
+    pg.logit(INFO, 'PHASE 4: Bypassing Column comparison...')
+    print('')
+else:
+    pg.logit(INFO, "PHASE 3: Comparing Columns...")
+    rc = pg.CompareColumns()
+    if rc == RC_ERR:
+        # error has already been logged
+        pg.logit(INFO, 'CompareColumns() Errror.')
+        pg.CloseStuff()
+        sys.exit(FAIL)    
 
 # Phase 4: Compare Key/Indexes
 if pg.IgnoreIndexes:
@@ -1771,7 +1826,10 @@ if pg.IgnoreRowCounts:
 else:
     pg.logit(INFO, "PHASE 6: Comparing Row Counts...")
     if pg.scantype == 'simplescan':
+        pg.logit(INFO, "PHASE 6: Comparing Row Counts...")
         pg.logit(WARN, '*** SimpleScan: Row Counts are statistically computed so make sure you run ANALYZE beforehand. ***')
+    else:
+        pg.logit(INFO, "PHASE 6: Comparing Row Counts. This may take a long time...")
     rc = pg.CompareRowCounts()
     if rc == RC_ERR:
         # error has already been logged
@@ -1783,9 +1841,9 @@ dt_ended = datetime.datetime.utcnow()
 secs = round((dt_ended - dt_started).total_seconds())
 
 if pg.ddldiffs == 0 and pg.rowcntdiffs == 0:
-    pg.logit(INFO,"Summary (%d seconds): No DDL differences found." % secs)
+    pg.logit(INFO,"Summary (%d seconds): No differences found." % secs)
 else:
-    pg.logit(INFO,"Summary (%d seconds): DDL Differences found: ddl (%d)  rowcnts (%d)" % (secs, pg.ddldiffs, pg.rowcntdiffs))
+    pg.logit(INFO,"Summary (%d seconds): Differences found: ddl (%d)  rowcnts (%d)" % (secs, pg.ddldiffs, pg.rowcntdiffs))
 
 pg.logit(INFO,"--------- program end   ----------")
 pg.CloseStuff()
@@ -1797,22 +1855,17 @@ following is stuff to get other DDL stuff to compare
 TRIGGERS:
 SELECT trigger_catalog, trigger_schema, trigger_name, event_manipulation, event_object_catalog, event_object_schema, event_object_table, action_statement 
 FROM information_schema.triggers WHERE trigger_schema = 'public'  ORDER BY trigger_schema, event_object_table, trigger_name limit 10;
-
 select n.nspname as schema_name, c.relname as table_name, t.tgname as trigger_name 
 FROM pg_trigger t, pg_class c, pg_namespace n where n.nspname = 'public' and  t.tgrelid = c.oid and c.relnamespace = n.oid order by 1,2,3 limit 10;
-
 select pg_get_triggerdef(oid) from pg_trigger where tgname = '<your trigger name>';
-
 VIEWS: 
 SELECT schemaname, viewname, definition  FROM pg_catalog.pg_views
-
 SELECT a.tblname, a.rowcnt, b.tblname, b.rowcnt from (SELECT c.relname as tblname, c.reltuples::bigint as rowcnt from pg_class c, pg_namespace n WHERE n.oid = c.relnamespace and n.nspname = 'sample' and c.relkind = 'r' ORDER BY 1) a, 
 (SELECT t.relname as tblname, t.n_live_tup::bigint as rowcnt from pg_stat_user_tables t, pg_class c, pg_namespace n WHERE n.nspname = 'sample' AND 
 n.oid = c.relnamespace AND n.nspname = t.schemaname and t.relname = c.relname and c.relkind = 'r'  ORDER BY 1) b WHERE a.tblname = b.tblname and a.tblname in ('measurement');
 SELECT a.tblname, a.rowcnt, b.tblname, b.rowcnt from (SELECT c.relname as tblname, c.reltuples::bigint as rowcnt from pg_class c, pg_namespace n WHERE n.oid = c.relnamespace and n.nspname = 'sample_clonedata' and c.relkind = 'r' ORDER BY 1) a, 
 (SELECT t.relname as tblname, t.n_live_tup::bigint as rowcnt from pg_stat_user_tables t, pg_class c, pg_namespace n WHERE n.nspname = 'sample_clonedata' AND 
 n.oid = c.relnamespace AND n.nspname = t.schemaname and t.relname = c.relname and c.relkind = 'r'  ORDER BY 1) b WHERE a.tblname = b.tblname and a.tblname in ('measurement');
-
 COMMENTS:
 SELECT CASE WHEN c.relkind = 'r' THEN 'TABLE' WHEN c.relkind = 'p' THEN 'PARTITIONED TABLE' WHEN c.relkind = 'S' THEN 'SEQUENCE' WHEN c.relkind = 'f' THEN 'FOREIGN TABLE' WHEN c.relkind = 'v' THEN 'VIEW' WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' WHEN c.relkind = 'i' THEN 'INDEX' WHEN c.relkind = 'c' THEN 'TYPE' END as OBJECT, c.relname as relname, d.description as comments
 FROM pg_class c JOIN pg_namespace n ON (n.oid = c.relnamespace) LEFT JOIN pg_description d ON (c.oid = d.objoid) LEFT JOIN pg_attribute a ON (c.oid = a.attrelid AND a.attnum > 0 and a.attnum = d.objsubid)
@@ -1845,7 +1898,6 @@ UNION
 SELECT 'POLICY' as OBJECT, p1.policyname as relname, d.description as comments from pg_policies p1, pg_policy p2, pg_class c, pg_namespace n, pg_description d WHERE d.objsubid = 0 AND p1.schemaname = n.nspname and p1.tablename = c.relname AND 
 n.oid = c.relnamespace and c.relkind in ('r','p') and p1.policyname = p2.polname and d.objoid = p2.oid and p1.schemaname in ('sample')
 ORDER BY 1;
-
 WITH details as (SELECT CASE WHEN c.relkind = 'r' THEN 'TABLE' WHEN c.relkind = 'p' THEN 'PARTITIONED TABLE' WHEN c.relkind = 'S' THEN 'SEQUENCE' WHEN c.relkind = 'f' THEN 'FOREIGN TABLE' WHEN c.relkind = 'v' THEN 'VIEW' WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' WHEN c.relkind = 'i' THEN 'INDEX' WHEN c.relkind = 'c' THEN 'TYPE' END as OBJECT, c.relname as relname, d.description as comments
 FROM pg_class c JOIN pg_namespace n ON (n.oid = c.relnamespace) LEFT JOIN pg_description d ON (c.oid = d.objoid) LEFT JOIN pg_attribute a ON (c.oid = a.attrelid AND a.attnum > 0 and a.attnum = d.objsubid)
 WHERE d.objsubid = 0 AND d.description IS NOT NULL AND n.nspname in ('sample')
@@ -1878,9 +1930,4 @@ SELECT 'POLICY' as OBJECT, p1.policyname as relname, d.description as comments f
 n.oid = c.relnamespace and c.relkind in ('r','p') and p1.policyname = p2.polname and d.objoid = p2.oid and p1.schemaname in ('sample')
 ORDER BY 1)
 Select object, count(*) from details group by 1 order by 1;
-
-
 '''
-
-
-
