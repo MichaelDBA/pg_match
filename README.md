@@ -51,6 +51,8 @@ Regarding the scantype parameter (**-t** or **--scantype**), **SimpleScan** uses
 <br/>
 `-v --verbose`          verbose output (useful for debugging)
 <br/>
+`-x --print_help`       print help message for program
+<br/>
 <br/>
 
 ## Requirements
