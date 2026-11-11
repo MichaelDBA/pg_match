@@ -1,7 +1,7 @@
 # pg_match
 Schema Summary Comparison Tool
 
-(c) 2022-2023 SQLEXEC LLC
+(c) 2022-2026 SQLEXEC LLC
 <br/>
 GNU V3 and MIT licenses are conveyed accordingly.
 <br/>
