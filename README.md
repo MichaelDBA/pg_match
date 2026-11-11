@@ -56,7 +56,7 @@ Regarding the scantype parameter (**-t** or **--scantype**), **SimpleScan** uses
 <br/>
 
 ## Requirements
-1. python 2.7 or above
+1. python 3.x and above
 2. python packages: psycopg2
 3. Works on Linux and Windows.
 4. PostgreSQL versions 10+
