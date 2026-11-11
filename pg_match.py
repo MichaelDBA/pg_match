@@ -1,4 +1,3 @@
-#!/usr/bin/env python2
 #!/usr/bin/env python3
 #!/usr/bin/env python
 from __future__ import print_function
@@ -14,14 +13,15 @@ from __future__ import print_function
 #
 # usage:
 # type = simplescan | detailedscan
+# pg_match.py -t simplescan -H localhost --Sport 5418 --Suser postgres --Sdb clone_testing --Sschema sample --Thost localhost --Tport 5418 --Tuser postgres --Tdb clone_testing --Tschema cloned20261111a
 # pg_match.py -t simplescan -H localhost --Sport 5414 --Suser postgres --Sdb clone_testing --Sschema sample --Thost localhost --Tport 5414 --Tuser postgres --Tdb clone_testing --Tschema sample_clone1
 # pg_match.py -t simplescan -H eddp-staging-popstore3.cluster-cddj9wcflvor.us-gov-west-1.rds.amazonaws.com  --Sport 5432 --Suser root --Sdb popstore3 --Sschema lookup_module --Thost eddp-staging-popstore3.cluster-cddj9wcflvor.us-gov-west-1.rds.amazonaws.com --Tport 5432 --Tuser root --Tdb popstore3 --Tschema lookup_module_beta
 # Assumptions:
 # 1. Only supports PG versions 10 and up.
 # 2. Both versions must be v10 if either one of them is v10.
-# 3. Python 2.7+, 3.x+ are supported python versions.
+# 3. Python 3.x+ are supported python versions.
 #
-# Copyright (C) 2013 - 2023, SQLExec LLC.  All rights reserved.
+# Copyright (C) 2013 - 2026, SQLExec LLC.  All rights reserved.
 #
 # Modifications History:
 # Date          Programmer        Description of Change
@@ -42,6 +42,7 @@ from __future__ import print_function
 #                                              Fixed column attribute slowness
 # 2023-01-13    Michael Vitale    version 3.1  Fixed logic for handling cases where no objects found in a particular class
 # 2023-01-18    Michael Vitale    version 3.2  Enhancement: add bypass columns parm, inplace updates for row counts during DetailedScan, added signal handler for ctrl-c interruptions
+# 2026-11-11    Michael Vitale    version 4.0  Apply Issue#01 fix. Update Python from version 2 to version 3.
 ##########################################################################################
 import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass, signal
 from optparse  import OptionParser
@@ -49,10 +50,10 @@ from decimal import *
 import psycopg2
 
 DESCRIPTION="This python utility program compares schemas for a specific database."
-VERSION    = 3.2
+VERSION    = 4.0
 PROGNAME   = "pg_match"
-ADATE      = "January 18, 2023"
-PROGDATE   = "2023-01-18"
+ADATE      = "November 11, 2026"
+PROGDATE   = "2026-11-11"
 
 #Globals
 FAIL = 1
@@ -1639,7 +1640,7 @@ class maint:
                             if Srow[0] != Trow[0]:
                                 diffs = diffs + 1
                                 self.rowcntdiffs = self.rowcntdiffs + 1
-                                self.logit (DIFF, '%20s %-35s Real rowcnts mismatch %09d<>%09d  diff=$09d' % (typediff, sTable1, Srow[0], Trow[0], abs(Srow[0] - Trow[0])))
+                                self.logit (DIFF, '%20s %-35s Real rowcnts mismatch %09d<>%09d  diff=%09d' % (typediff, sTable1, Srow[0], Trow[0], abs(Srow[0] - Trow[0])))
                     break        
         print ('')
         return RC_OK    
