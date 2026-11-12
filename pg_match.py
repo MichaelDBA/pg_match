@@ -1657,11 +1657,10 @@ class maint:
         Trow = self.obj_Trow
         widths = [max(len(name), len(str(Srow[i])), len(str(Trow[i]))) for i, name in enumerate(names)]
 
-        if self.verbose:
-            print("         " + "  ".join(f"{name:>{widths[i]}}" for i, name in enumerate(names)))
-            print("Source   " + "  ".join(f"{str(Srow[i]):>{widths[i]}}" for i in range(len(names))))
-            print("Target   " + "  ".join(f"{str(Trow[i]):>{widths[i]}}" for i in range(len(names))))
-            print('')
+        print("         " + "  ".join(f"{name:>{widths[i]}}" for i, name in enumerate(names)))
+        print("Source   " + "  ".join(f"{str(Srow[i]):>{widths[i]}}" for i in range(len(names))))
+        print("Target   " + "  ".join(f"{str(Trow[i]):>{widths[i]}}" for i in range(len(names))))
+        print('')
 
         print ('')
         return RC_OK    
@@ -1860,14 +1859,13 @@ else:
         sys.exit(FAIL)    
 
 # Phase 7: Showing Object Metrics
-if pg.verbose:
-    pg.logit(INFO, "PHASE 7: Show Object Matrix...")
-    rc = pg.ShowObjectMatrix()
-    if rc == RC_ERR:
-        # error has already been logged
-        pg.logit(INFO, 'ShowObjectMatrix Errror.')
-        pg.CloseStuff()
-        sys.exit(FAIL)    
+pg.logit(INFO, "PHASE 7: Show Object Matrix...")
+rc = pg.ShowObjectMatrix()
+if rc == RC_ERR:
+    # error has already been logged
+    pg.logit(INFO, 'ShowObjectMatrix Errror.')
+    pg.CloseStuff()
+    sys.exit(FAIL)    
 
 # Cleanup time
 dt_ended = datetime.datetime.utcnow()
