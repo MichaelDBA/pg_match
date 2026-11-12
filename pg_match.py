@@ -42,7 +42,7 @@ from __future__ import print_function
 #                                              Fixed column attribute slowness
 # 2023-01-13    Michael Vitale    version 3.1  Fixed logic for handling cases where no objects found in a particular class
 # 2023-01-18    Michael Vitale    version 3.2  Enhancement: add bypass columns parm, inplace updates for row counts during DetailedScan, added signal handler for ctrl-c interruptions
-# 2026-11-11    Michael Vitale    version 4.0  Apply Issue#01 fix. Update Python from version 2 to version 3.
+# 2026-11-12    Michael Vitale    version 4.0  Apply Issue#01 fix. Update Python from version 2 to version 3.
 ##########################################################################################
 import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass, signal
 from optparse  import OptionParser
@@ -52,8 +52,8 @@ import psycopg2
 DESCRIPTION="This python utility program compares schemas for a specific database."
 VERSION    = 4.0
 PROGNAME   = "pg_match"
-ADATE      = "November 11, 2026"
-PROGDATE   = "2026-11-11"
+ADATE      = "November 12, 2026"
+PROGDATE   = "2026-11-12"
 
 #Globals
 FAIL = 1
@@ -349,196 +349,198 @@ class maint:
     # Phase 1: object count diffs #
     ###############################
     def CompareObjects(self):
-        # do all objects first except comments since comments are quite complex
-        aschema = self.Sschema
-        sql = "SELECT rt.tbls_regular as tbls_regular, ut.unlogged_tables as tbls_unlogged, pt.partitions as tbls_child, pn.parents as tbls_parents, " \
-              "rt.tbls_regular + ut.unlogged_tables + pt.partitions + pn.parents as tbls_total, ft.ftables as ftables, se.sequences as sequences, ide.identities as identities, ix.indexes as indexes, " \
-              "vi.views as views, pv.pviews as pub_views, mv.mats as mat_views, fn.functions as functions, ty.types as types, tf.trigfuncs, tr.triggers as triggers, " \
-              "co.collations as collations, dom.domains as domains, ru.rules as rules, po.policies as policies FROM " \
-              "(SELECT count(*) as tbls_regular FROM pg_class c, pg_tables t, pg_namespace n where t.schemaname = '%s' and t.tablename = c.relname and c.relkind = 'r' and " \
-              "    n.oid = c.relnamespace and n.nspname = t.schemaname and c.relpersistence = 'p' and c.relispartition is false) rt, " \
-              "(SELECT count(distinct (t.schemaname, t.tablename)) as unlogged_tables from pg_tables t, pg_class c where t.schemaname = '%s' and t.tablename = c.relname and c.relkind = 'r' and c.relpersistence = 'u' ) ut, " \
-              "(SELECT count(*) as ftables FROM pg_catalog.pg_class c LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'f' AND n.nspname = '%s') ft, " \
-              "(SELECT count(*) as sequences FROM pg_class c, pg_namespace n where n.oid = c.relnamespace and c.relkind = 'S' and n.nspname = '%s') se, " \
-              "(SELECT count(*) as identities FROM pg_sequences where schemaname = '%s' AND NOT EXISTS (select 1 from information_schema.sequences where sequence_schema = '%s' and sequence_name = sequencename)) ide, " \
-              "(SELECT count(*) as indexes from pg_class c, pg_namespace n, pg_indexes i where n.nspname = '%s' and n.oid = c.relnamespace and c.relkind != 'p' and n.nspname = i.schemaname and c.relname = i.tablename) ix, " \
-              "(SELECT count(*) as views from pg_views where schemaname = '%s') vi, (select count(*) as pviews from pg_views where schemaname = 'public') pv, " \
-              "(SELECT count(distinct i.inhparent) as parents from pg_inherits i, pg_class c, pg_namespace n  where c.relkind in ('p','r') and i.inhparent = c.oid and c.relnamespace = n.oid and n.nspname = '%s') pn, " \
+        # Compare object counts using one SQL statement for both schemas.
+        sql = "SELECT rt.tbls_regular as tables_normal, ut.unlogged_tables as tbls_unlogged, pt.partitions as tbls_child, pn.parents as tbls_parents, rt.tbls_regular + ut.unlogged_tables + pt.partitions + pn.parents as tbls_total, " \
+              "(SELECT count(*) FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %(schema)s AND con.contype = 'f') AS fkeys, " \
+              "(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %(schema)s AND c.relkind = 'f') AS ftbles, " \
+              "se.sequences as seqs, ide.identities as identities, ix.indexes as indexes, vi.views as views, pv.pviews as pub_views, mv.mats as mat_views, fn.functions as functions, ty.types as types, " \
+              "tf.trigfuncs, tr.triggers as triggers, co.collations as collations, dom.domains as domains, ru.rules as rules, po.policies as policies, com.comments as comments " \
+              "FROM (select count(*) as tbls_regular FROM pg_class c, pg_tables t, pg_namespace n WHERE t.schemaname = %(schema)s AND t.tablename = c.relname AND c.relkind = 'r' AND " \
+              "n.oid = c.relnamespace AND n.nspname = t.schemaname AND c.relpersistence = 'p' AND c.relispartition is false) rt, " \
+              "(select count(distinct (t.schemaname, t.tablename)) as unlogged_tables from pg_tables t, pg_class c WHERE t.schemaname = %(schema)s AND t.tablename = c.relname AND c.relkind = 'r' AND c.relpersistence = 'u' ) ut, " \
+              "(SELECT count(*) as sequences FROM pg_class c, pg_namespace n WHERE n.oid = c.relnamespace AND c.relkind = 'S' AND n.nspname = %(schema)s) se, " \
+              "(SELECT count(*) as identities FROM pg_sequences where schemaname = %(schema)s AND NOT EXISTS (select 1 FROM information_schema.sequences WHERE sequence_schema = %(schema)s AND sequence_name = sequencename)) ide, " \
+              "(select count(*) as indexes FROM pg_class c, pg_namespace n, pg_indexes i WHERE n.nspname = %(schema)s AND n.oid = c.relnamespace AND c.relkind <> 'p' AND n.nspname = i.schemaname AND " \
+              "c.relname = i.tablename) ix, (select count(*) as views FROM pg_views WHERE schemaname = %(schema)s) vi, " \
+              "(select count(*) as pviews FROM pg_views WHERE schemaname = 'public') pv, " \
+              "(SELECT count(distinct i.inhparent) as parents FROM pg_inherits i, pg_class c, pg_namespace n WHERE c.relkind in ('p','r') AND i.inhparent = c.oid AND c.relnamespace = n.oid AND n.nspname = %(schema)s) pn, " \
               "(SELECT count(*) as partitions FROM pg_inherits JOIN pg_class AS c ON (inhrelid=c.oid) JOIN pg_class as p ON (inhparent=p.oid) JOIN pg_namespace pn ON pn.oid = p.relnamespace " \
-              "    JOIN pg_namespace cn ON cn.oid = c.relnamespace WHERE pn.nspname = '%s' and c.relkind = 'r') pt, " \
-              "(SELECT count(*) as functions FROM pg_proc p INNER JOIN pg_namespace ns ON (p.pronamespace = ns.oid) WHERE ns.nspname = '%s') fn, " \
+              "JOIN pg_namespace cn ON cn.oid = c.relnamespace WHERE pn.nspname = %(schema)s and c.relkind = 'r') pt, " \
+              "(SELECT count(*) as functions FROM pg_proc p INNER JOIN pg_namespace ns ON (p.pronamespace = ns.oid) WHERE ns.nspname = %(schema)s) fn, " \
               "(SELECT count(*) as types FROM pg_type t LEFT JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE (t.typrelid = 0 OR " \
-              "    (SELECT c.relkind = 'c' FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid)) AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_type el WHERE el.oid = t.typelem AND el.typarray = t.oid) AND n.nspname = '%s') ty, " \
-              "(SELECT count(*) as trigfuncs FROM pg_catalog.pg_proc p LEFT JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace LEFT JOIN pg_catalog.pg_language l ON l.oid = p.prolang " \
-              "    WHERE pg_catalog.pg_get_function_result(p.oid) = 'trigger' and n.nspname = '%s') tf, " \
-              "(SELECT count(distinct (trigger_schema, trigger_name, event_object_table, action_statement, action_orientation, action_timing)) as triggers  FROM information_schema.triggers WHERE trigger_schema = '%s') tr, " \
-              "(SELECT count(distinct(n.nspname, c.relname)) as mats from pg_class c, pg_namespace n where c.relnamespace = n.oid and c.relkind = 'm') mv, " \
-              "(SELECT count(*) as collations FROM pg_collation c JOIN pg_namespace n ON (c.collnamespace = n.oid) JOIN pg_roles a ON (c.collowner = a.oid) WHERE n.nspname = '%s') co, " \
-              "(SELECT count(*) as domains FROM pg_catalog.pg_type t LEFT JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.typtype = 'd' AND n.nspname OPERATOR(pg_catalog.~) '^(%s)$' COLLATE pg_catalog.default) dom, " \
-              "(SELECT count(*) as rules from pg_rules where schemaname = '%s') ru, " \
-              "(SELECT count(*) as policies from pg_policies where schemaname = '%s') po" \
-              % (aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, 
-                 aschema, aschema, aschema, aschema, aschema)
-        try:              
-            self.curS.execute(sql)
+              "(SELECT c.relkind = 'c' FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid)) AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_type el WHERE el.oid = t.typelem AND el.typarray = t.oid) AND n.nspname = %(schema)s) ty, " \
+              "(SELECT count(*) as trigfuncs FROM pg_catalog.pg_proc p LEFT JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace LEFT JOIN pg_catalog.pg_language l ON " \
+              "l.oid = p.prolang WHERE pg_catalog.pg_get_function_result(p.oid) = 'trigger' and n.nspname = %(schema)s) tf, " \
+              "(SELECT count(distinct (trigger_schema, trigger_name, event_object_table, action_statement, action_orientation, action_timing)) as triggers FROM information_schema.triggers WHERE trigger_schema = %(schema)s) tr, " \
+              "(select count(distinct(n.nspname, c.relname)) as mats from pg_class c, pg_namespace n where c.relnamespace = n.oid and c.relkind = 'm') mv, " \
+              "(SELECT count(*) as collations FROM pg_collation c JOIN pg_namespace n ON (c.collnamespace = n.oid) JOIN pg_roles a ON (c.collowner = a.oid) WHERE n.nspname = %(schema)s) co, " \
+              "(SELECT count(*) as domains FROM pg_catalog.pg_type t LEFT JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.typtype = 'd' AND n.nspname = %(schema)s) dom, " \
+              "(select count(*) as rules from pg_rules where schemaname = %(schema)s) ru, " \
+              "(select count(*) as policies from pg_policies where schemaname = %(schema)s) po, " \
+              "(select sum(cnts.cnt) as comments FROM (SELECT count(*) as cnt FROM pg_class c JOIN pg_namespace n ON (n.oid = c.relnamespace) LEFT JOIN pg_description d ON " \
+              "(c.oid = d.objoid) LEFT JOIN pg_attribute a ON (c.oid = a.attrelid AND a.attnum > 0 and a.attnum = d.objsubid) WHERE d.description IS NOT NULL AND " \
+              "n.nspname = %(schema)s UNION ALL SELECT count(*) as cnt from pg_namespace n, pg_description d where d.objoid = n.oid and n.nspname = %(schema)s " \
+              "UNION ALL SELECT count(*) as cnt FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE (t.typrelid = 0 OR (SELECT c.relkind = 'c' " \
+              "FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid)) AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_type el WHERE el.oid = t.typelem AND el.typarray = t.oid) AND " \
+              "n.nspname = %(schema)s COLLATE pg_catalog.default AND pg_catalog.obj_description(t.oid, 'pg_type') IS NOT NULL and t.typtype = 'c' " \
+              "UNION ALL SELECT count(*) as cnt FROM pg_catalog.pg_collation c, pg_catalog.pg_namespace n WHERE n.oid = c.collnamespace AND c.collencoding IN " \
+              "(-1, pg_catalog.pg_char_to_encoding(pg_catalog.getdatabaseencoding())) AND n.nspname = %(schema)s AND pg_catalog.obj_description(c.oid, 'pg_collation') " \
+              "IS NOT NULL UNION ALL SELECT count(*) as cnt from pg_catalog.pg_namespace n JOIN pg_catalog.pg_proc p ON p.pronamespace = n.oid JOIN " \
+              "pg_description d ON (d.objoid = p.oid) WHERE n.nspname = %(schema)s UNION ALL SELECT count(*) as cnt from pg_policies p1, pg_policy p2, pg_class c, " \
+              "pg_namespace n, pg_description d WHERE p1.schemaname = n.nspname and p1.tablename = c.relname and n.oid = c.relnamespace and c.relkind in ('r','p') and p1.policyname " \
+              "= p2.polname and d.objoid = p2.oid and p1.schemaname = %(schema)s UNION ALL SELECT count(*) as cnt FROM pg_catalog.pg_type t LEFT JOIN pg_catalog.pg_namespace n ON n.oid = " \
+              "t.typnamespace JOIN pg_catalog.pg_description d ON d.classoid = t.tableoid AND d.objoid = t.oid AND d.objsubid = 0 WHERE t.typtype = 'd' AND n.nspname = %(schema)s COLLATE pg_catalog.default) cnts) com;"
+
+        try:
+            self.curS.execute(sql, {'schema': self.Sschema})
         except Exception as error:
-            msg="Source Object Count Diff Error %s *** %s" % (type(error), error)
+            msg = "Source Object Count Diff Error %s *** %s" % (type(error), error)
             self.logit(ERR, msg)
             return RC_ERR
 
-        arow = self.curS.fetchone()
-        if len(arow) == 0:
-            msg="Source Object Count Diff Notice: No rows returned."
+        Srow = self.curS.fetchone()
+        if Srow is None:
+            msg = "Source Object Count Diff Error: No rows returned."
             self.logit(ERR, msg)
-            return RC_ERR    
-        #print (arow)
-        tbls_regular  = arow[0]
-        tbls_unlogged = arow[1]
-        tbls_child    = arow[2]
-        tbls_parents  = arow[3]
-        tbls_total    = arow[4]
-        tbls_foreign  = arow[5]
-        sequences     = arow[6]
-        identities    = arow[7]
-        indexes       = arow[8]
-        views         = arow[9]
-        pub_views     = arow[10]
-        mat_views     = arow[11]
-        functions     = arow[12]
-        types         = arow[13]
-        trigfuncs     = arow[14]
-        triggers      = arow[15]
-        collations    = arow[16]
-        domains       = arow[17]
-        rules         = arow[18]
-        policies      = arow[19]
+            return RC_ERR
+
+        try:
+            self.curT.execute(sql, {'schema': self.Tschema})
+        except Exception as error:
+            msg = "Target Object Count Diff Error %s *** %s" % (type(error), error)
+            self.logit(ERR, msg)
+            return RC_ERR
+
+        Trow = self.curT.fetchone()
+        if Trow is None:
+            msg = "Target Object Count Diff Error: No rows returned."
+            self.logit(ERR, msg)
+            return RC_ERR
+
+        Sobjrow = Srow
+        Tobjrow = Trow
+
+        self.obj_names = [desc[0] for desc in self.curS.description]
+        self.obj_Srow = Srow
+        self.obj_Trow = Trow
         
-        aschema = self.Tschema
-        sql = "SELECT rt.tbls_regular as tbls_regular, ut.unlogged_tables as tbls_unlogged, pt.partitions as tbls_child, pn.parents as tbls_parents, " \
-              "rt.tbls_regular + ut.unlogged_tables + pt.partitions + pn.parents as tbls_total, ft.ftables as ftables, se.sequences as sequences, ide.identities as identities, ix.indexes as indexes, " \
-              "vi.views as views, pv.pviews as pub_views, mv.mats as mat_views, fn.functions as functions, ty.types as types, tf.trigfuncs, tr.triggers as triggers, " \
-              "co.collations as collations, dom.domains as domains, ru.rules as rules, po.policies as policies FROM " \
-              "(SELECT count(*) as tbls_regular FROM pg_class c, pg_tables t, pg_namespace n where t.schemaname = '%s' and t.tablename = c.relname and c.relkind = 'r' and " \
-              "    n.oid = c.relnamespace and n.nspname = t.schemaname and c.relpersistence = 'p' and c.relispartition is false) rt, " \
-              "(SELECT count(distinct (t.schemaname, t.tablename)) as unlogged_tables from pg_tables t, pg_class c where t.schemaname = '%s' and t.tablename = c.relname and c.relkind = 'r' and c.relpersistence = 'u' ) ut, " \
-              "(SELECT count(*) as ftables FROM pg_catalog.pg_class c LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind = 'f' AND n.nspname = '%s') ft, " \
-              "(SELECT count(*) as sequences FROM pg_class c, pg_namespace n where n.oid = c.relnamespace and c.relkind = 'S' and n.nspname = '%s') se, " \
-              "(SELECT count(*) as identities FROM pg_sequences where schemaname = '%s' AND NOT EXISTS (select 1 from information_schema.sequences where sequence_schema = '%s' and sequence_name = sequencename)) ide, " \
-              "(SELECT count(*) as indexes from pg_class c, pg_namespace n, pg_indexes i where n.nspname = '%s' and n.oid = c.relnamespace and c.relkind != 'p' and n.nspname = i.schemaname and c.relname = i.tablename) ix, " \
-              "(SELECT count(*) as views from pg_views where schemaname = '%s') vi, (select count(*) as pviews from pg_views where schemaname = 'public') pv, " \
-              "(SELECT count(distinct i.inhparent) as parents from pg_inherits i, pg_class c, pg_namespace n  where c.relkind in ('p','r') and i.inhparent = c.oid and c.relnamespace = n.oid and n.nspname = '%s') pn, " \
-              "(SELECT count(*) as partitions FROM pg_inherits JOIN pg_class AS c ON (inhrelid=c.oid) JOIN pg_class as p ON (inhparent=p.oid) JOIN pg_namespace pn ON pn.oid = p.relnamespace " \
-              "    JOIN pg_namespace cn ON cn.oid = c.relnamespace WHERE pn.nspname = '%s' and c.relkind = 'r') pt, " \
-              "(SELECT count(*) as functions FROM pg_proc p INNER JOIN pg_namespace ns ON (p.pronamespace = ns.oid) WHERE ns.nspname = '%s') fn, " \
-              "(SELECT count(*) as types FROM pg_type t LEFT JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE (t.typrelid = 0 OR " \
-              "    (SELECT c.relkind = 'c' FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid)) AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_type el WHERE el.oid = t.typelem AND el.typarray = t.oid) AND n.nspname = '%s') ty, " \
-              "(SELECT count(*) as trigfuncs FROM pg_catalog.pg_proc p LEFT JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace LEFT JOIN pg_catalog.pg_language l ON l.oid = p.prolang " \
-              "    WHERE pg_catalog.pg_get_function_result(p.oid) = 'trigger' and n.nspname = '%s') tf, " \
-              "(SELECT count(distinct (trigger_schema, trigger_name, event_object_table, action_statement, action_orientation, action_timing)) as triggers  FROM information_schema.triggers WHERE trigger_schema = '%s') tr, " \
-              "(SELECT count(distinct(n.nspname, c.relname)) as mats from pg_class c, pg_namespace n where c.relnamespace = n.oid and c.relkind = 'm') mv, " \
-              "(SELECT count(*) as collations FROM pg_collation c JOIN pg_namespace n ON (c.collnamespace = n.oid) JOIN pg_roles a ON (c.collowner = a.oid) WHERE n.nspname = '%s') co, " \
-              "(SELECT count(*) as domains FROM pg_catalog.pg_type t LEFT JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE t.typtype = 'd' AND n.nspname OPERATOR(pg_catalog.~) '^(%s)$' COLLATE pg_catalog.default) dom, " \
-              "(SELECT count(*) as rules from pg_rules where schemaname = '%s') ru, " \
-              "(SELECT count(*) as policies from pg_policies where schemaname = '%s') po" \
-              % (aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, aschema, 
-                 aschema, aschema, aschema, aschema, aschema)        
-        try:              
-            self.curT.execute(sql)
-        except Exception as error:
-            msg="Target Object Count Diff Error %s *** %s" % (type(error), error)
-            self.logit(ERR, msg)
-            return RC_ERR
+        names = [desc[0] for desc in self.curS.description]
 
-        arow = self.curT.fetchone()
-        if len(arow) == 0:
-            msg="Target Object Count Diff Error: No rows returned."
-            self.logit(ERR, msg)
-            return RC_ERR    
-        #print (arow)
+        tbls_regular  = Srow[0]
+        tbls_unlogged = Srow[1]
+        tbls_child    = Srow[2]
+        tbls_parents  = Srow[3]
+        tbls_total    = Srow[4]
+        fkeys         = Srow[5]
+        tbls_foreign  = Srow[6]
+        sequences     = Srow[7]
+        identities    = Srow[8]
+        indexes       = Srow[9]
+        views         = Srow[10]
+        pub_views     = Srow[11]
+        mat_views     = Srow[12]
+        functions     = Srow[13]
+        types         = Srow[14]
+        trigfuncs     = Srow[15]
+        triggers      = Srow[16]
+        collations    = Srow[17]
+        domains       = Srow[18]
+        rules         = Srow[19]
+        policies      = Srow[20]
 
         # do the compare        
+
+        # do the compare
         msg = ''
         typediff = 'Object Count Diff:'
-        if tbls_regular != arow[0]:
-            msg = '%20s      Regular table mismatch (%.3d<>%.3d)' % (typediff, tbls_regular, arow[0])
+        if tbls_regular != Trow[0]:
+            msg = '%20s      Regular table mismatch (%.3d<>%.3d)' % (typediff, tbls_regular, Trow[0])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)
-        if tbls_unlogged != arow[1]:
-            msg = '%20s     Unlogged table mismatch (%.3d<>%.3d)' % (typediff, tbls_unlogged, arow[1])
+        if tbls_unlogged != Trow[1]:
+            msg = '%20s     Unlogged table mismatch (%.3d<>%.3d)' % (typediff, tbls_unlogged, Trow[1])
             self.ddldiffs = self.ddldiffs + 1
             self.logit(DIFF, msg)
-        if tbls_child != arow[2]:
-            msg = '%20s        Child table mismatch (%.3d<>%.3d)' % (typediff, tbls_child, arow[2])
+        if tbls_child != Trow[2]:
+            msg = '%20s        Child table mismatch (%.3d<>%.3d)' % (typediff, tbls_child, Trow[2])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)        
-        if tbls_parents != arow[3]:
-            msg = '%20s       Parent table mismatch (%.3d<>%.3d)' % (typediff, tbls_parents, arow[3])
+            self.logit(DIFF, msg)
+        if tbls_parents != Trow[3]:
+            msg = '%20s       Parent table mismatch (%.3d<>%.3d)' % (typediff, tbls_parents, Trow[3])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if tbls_total != arow[4]:
-            msg = '%20s        Total table mismatch (%.3d<>%.3d)' % (typediff, tbls_total, arow[4])
+            self.logit(DIFF, msg)
+        if tbls_total != Trow[4]:
+            msg = '%20s        Total table mismatch (%.3d<>%.3d)' % (typediff, tbls_total, Trow[4])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)        
-        if tbls_foreign != arow[5]:
-            msg = '%20s      Foreign table mismatch (%.3d<>%.3d)' % (typediff, tbls_foreign, arow[5])
+            self.logit(DIFF, msg)
+        if fkeys != Trow[5]:
+            msg = '%20s       Foreign keys mismatch (%.3d<>%.3d)' % (typediff, fkeys, Trow[5])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)            
-        if sequences  != arow[6]:
-            msg = '%20s          Sequences mismatch (%.3d<>%.3d)' % (typediff, sequences, arow[6])
+            self.logit(DIFF, msg)
+        if tbls_foreign != Trow[6]:
+            msg = '%20s      Foreign table mismatch (%.3d<>%.3d)' % (typediff, tbls_foreign, Trow[6])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if identities != arow[7]:
-            msg = '%20s         Identities mismatch (%.3d<>%.3d)' % (typediff, identities, arow[7])
+            self.logit(DIFF, msg)
+        if sequences != Trow[7]:
+            msg = '%20s          Sequences mismatch (%.3d<>%.3d)' % (typediff, sequences, Trow[7])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if indexes != arow[8]:
-            msg = '%20s            Indexes mismatch (%.3d<>%.3d)' % (typediff, indexes, arow[8])
+            self.logit(DIFF, msg)
+        if identities != Trow[8]:
+            msg = '%20s         Identities mismatch (%.3d<>%.3d)' % (typediff, identities, Trow[8])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if views != arow[9]:
-            msg = '%20s              Views mismatch (%.3d<>%.3d)' % (typediff, views, arow[9])
+            self.logit(DIFF, msg)
+        if indexes != Trow[9]:
+            msg = '%20s            Indexes mismatch (%.3d<>%.3d)' % (typediff, indexes, Trow[9])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if pub_views != arow[10]:
-            msg = '%20s       Public Views mismatch (%.3d<>%.3d)' % (typediff, pub_views, arow[10])
+            self.logit(DIFF, msg)
+        if views != Trow[10]:
+            msg = '%20s              Views mismatch (%.3d<>%.3d)' % (typediff, views, Trow[10])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if mat_views != arow[11]:
-            msg = '%20s Materialized Views mismatch (%.3d<>%.3d)' % (typediff, mat_views, arow[11])
+            self.logit(DIFF, msg)
+        if pub_views != Trow[11]:
+            msg = '%20s       Public Views mismatch (%.3d<>%.3d)' % (typediff, pub_views, Trow[11])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if functions != arow[12]:
-            msg = '%20s          Functions mismatch (%.3d<>%.3d)' % (typediff, functions, arow[12])
+            self.logit(DIFF, msg)
+        if mat_views != Trow[12]:
+            msg = '%20s Materialized Views mismatch (%.3d<>%.3d)' % (typediff, mat_views, Trow[12])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if types != arow[13]:
-            msg = '%20s              Types mismatch (%.3d<>%.3d)' % (typediff, types, arow[13])
+            self.logit(DIFF, msg)
+        if functions != Trow[13]:
+            msg = '%20s          Functions mismatch (%.3d<>%.3d)' % (typediff, functions, Trow[13])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if trigfuncs != arow[14]:
-            msg = '%20s  Trigger Functions mismatch (%.3d<>%.3d)' % (typediff, trigfuncs, arow[14])
+            self.logit(DIFF, msg)
+        if types != Trow[14]:
+            msg = '%20s              Types mismatch (%.3d<>%.3d)' % (typediff, types, Trow[14])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if triggers != arow[15]:
-            msg = '%20s           Triggers mismatch (%.3d<>%.3d)' % (typediff, triggers, arow[15])
+            self.logit(DIFF, msg)
+        if trigfuncs != Trow[15]:
+            msg = '%20s  Trigger Functions mismatch (%.3d<>%.3d)' % (typediff, trigfuncs, Trow[15])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if collations != arow[16]:
-            msg = '%20s         Collations mismatch (%.3d<>%.3d)' % (typediff, collations, arow[16])
+            self.logit(DIFF, msg)
+        if triggers != Trow[16]:
+            msg = '%20s           Triggers mismatch (%.3d<>%.3d)' % (typediff, triggers, Trow[16])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if domains != arow[17]:
-            msg = '%20s            Domains mismatch (%.3d<>%.3d)' % (typediff, domains, arow[17])
+            self.logit(DIFF, msg)
+        if collations != Trow[17]:
+            msg = '%20s         Collations mismatch (%.3d<>%.3d)' % (typediff, collations, Trow[17])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if rules != arow[18]:
-            msg = '%20s              Rules mismatch (%.3d<>%.3d)' % (typediff, rules, arow[18])
+            self.logit(DIFF, msg)
+        if domains != Trow[18]:
+            msg = '%20s            Domains mismatch (%.3d<>%.3d)' % (typediff, domains, Trow[18])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
-        if policies != arow[19]:
-            msg = '%20s           Policies mismatch (%.3d<>%.3d)' % (typediff, policies, arow[19])
+            self.logit(DIFF, msg)
+        if rules != Trow[19]:
+            msg = '%20s              Rules mismatch (%.3d<>%.3d)' % (typediff, rules, Trow[19])
             self.ddldiffs = self.ddldiffs + 1
-            self.logit(DIFF, msg)                
+            self.logit(DIFF, msg)
+        if policies != Trow[20]:
+            msg = '%20s           Policies mismatch (%.3d<>%.3d)' % (typediff, policies, Trow[20])
+            self.ddldiffs = self.ddldiffs + 1
+            self.logit(DIFF, msg)
+        if Srow[21] != Trow[21]:
+            msg = '%20s           Comments mismatch (%.3d<>%.3d)' % (typediff, Srow[21], Trow[21])
+            self.ddldiffs = self.ddldiffs + 1
+            self.logit(DIFF, msg)
 
         # Now do the comments compare
         aschema = self.Sschema
@@ -656,6 +658,7 @@ class maint:
 
         cntS = 0
         cntT = 0
+        print('')
         typediff = 'Comments Diff:'
         
         for Srow in Srows:
@@ -697,7 +700,6 @@ class maint:
             if not found:
                 self.ddldiffs = self.ddldiffs + 1
                 self.logit (DIFF, "%20s %-19s  target comments (%04d) not found in source schema (%s)." % (typediff, tObject, tCount, self.Sschema))
-
 
         print ('')
         
@@ -1615,10 +1617,9 @@ class maint:
                             self.rowcntdiffs = self.rowcntdiffs + 1
                             self.logit (DIFF, '%20s %-35s rowcnts mismatch %09d<>%09d  diff=%09d' % (typediff, sTable1, sCount1, tCount1, abs(sCount1 - tCount1)))
                         else:
-                            #if self.PythonVersion == 2:
-                            if self.verbose:
-                                sys.stdout.write('\r>> Processing table %30s (%d/%d) diffs (%d)    ' % (sTable1, cnt1, sTotalRows, self.rowcntdiffs))
-                                sys.stdout.flush()
+                            #if self.verbose:
+                            #    sys.stdout.write('\r>> Processing table %30s (%d/%d) diffs (%d)    ' % (sTable1, cnt1, sTotalRows, self.rowcntdiffs))
+                            #    sys.stdout.flush()
 
                             aschema = self.Sschema
                             sql = 'SELECT COUNT(*) from %s."%s"' % (aschema, sTable1)
@@ -1643,6 +1644,25 @@ class maint:
                                 self.rowcntdiffs = self.rowcntdiffs + 1
                                 self.logit (DIFF, '%20s %-35s Real rowcnts mismatch %09d<>%09d  diff=%09d' % (typediff, sTable1, Srow[0], Trow[0], abs(Srow[0] - Trow[0])))
                     break        
+        print ('')
+        return RC_OK    
+
+
+    #############################
+    # Phase 7: Show object matrix
+    #############################
+    def ShowObjectMatrix(self):    
+        names = self.obj_names
+        Srow = self.obj_Srow
+        Trow = self.obj_Trow
+        widths = [max(len(name), len(str(Srow[i])), len(str(Trow[i]))) for i, name in enumerate(names)]
+
+        if self.verbose:
+            print("         " + "  ".join(f"{name:>{widths[i]}}" for i, name in enumerate(names)))
+            print("Source   " + "  ".join(f"{str(Srow[i]):>{widths[i]}}" for i in range(len(names))))
+            print("Target   " + "  ".join(f"{str(Trow[i]):>{widths[i]}}" for i in range(len(names))))
+            print('')
+
         print ('')
         return RC_OK    
 
@@ -1672,6 +1692,7 @@ def setupOptionParser():
     parser.add_option("-x", "--print_help",       dest="print_help",        help="Print Help",default=False, action="store_true")
     
     return parser
+
 
 ####################
 # MAIN ENTRY POINT #
@@ -1839,6 +1860,17 @@ else:
         pg.CloseStuff()
         sys.exit(FAIL)    
 
+# Phase 7: Showing Object Metrics
+if pg.verbose:
+    pg.logit(INFO, "PHASE 7: Show Object Matrix...")
+    rc = pg.ShowObjectMatrix()
+    if rc == RC_ERR:
+        # error has already been logged
+        pg.logit(INFO, 'ShowObjectMatrix Errror.')
+        pg.CloseStuff()
+        sys.exit(FAIL)    
+
+# Cleanup time
 dt_ended = datetime.datetime.utcnow()
 secs = round((dt_ended - dt_started).total_seconds())
 
