@@ -1847,12 +1847,11 @@ if pg.IgnoreRowCounts:
     pg.logit(INFO, 'PHASE 6: Bypassing Row Count comparison...')
     print('')
 else:
-    pg.logit(INFO, "PHASE 6: Comparing Row Counts...")
     if pg.scantype == 'simplescan':
-        pg.logit(INFO, "PHASE 6: Comparing Row Counts...")
+        pg.logit(INFO, "PHASE 6: Comparing Row Counts (estimated)...")
         pg.logit(WARN, '*** SimpleScan: Row Counts are statistically computed so make sure you run ANALYZE beforehand. ***')
     else:
-        pg.logit(INFO, "PHASE 6: Comparing Row Counts. This may take a long time...")
+        pg.logit(INFO, "PHASE 6: Comparing Row Counts (actual). This may take a long time...")
     rc = pg.CompareRowCounts()
     if rc == RC_ERR:
         # error has already been logged
