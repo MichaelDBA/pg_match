@@ -1616,8 +1616,9 @@ class maint:
                             self.logit (DIFF, '%20s %-35s rowcnts mismatch %09d<>%09d  diff=%09d' % (typediff, sTable1, sCount1, tCount1, abs(sCount1 - tCount1)))
                         else:
                             #if self.PythonVersion == 2:
-                            sys.stdout.write('\r>> Processing table %30s (%d/%d) diffs (%d)    ' % (sTable1, cnt1, sTotalRows, self.rowcntdiffs))
-                            sys.stdout.flush()
+                            if self.verbose:
+                                sys.stdout.write('\r>> Processing table %30s (%d/%d) diffs (%d)    ' % (sTable1, cnt1, sTotalRows, self.rowcntdiffs))
+                                sys.stdout.flush()
 
                             aschema = self.Sschema
                             sql = 'SELECT COUNT(*) from %s."%s"' % (aschema, sTable1)
