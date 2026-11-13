@@ -42,7 +42,7 @@ from __future__ import print_function
 #                                              Fixed column attribute slowness
 # 2023-01-13    Michael Vitale    version 3.1  Fixed logic for handling cases where no objects found in a particular class
 # 2023-01-18    Michael Vitale    version 3.2  Enhancement: add bypass columns parm, inplace updates for row counts during DetailedScan, added signal handler for ctrl-c interruptions
-# 2026-11-12    Michael Vitale    version 4.0  Apply Issue#01 fix. Update Python from version 2 to version 3.
+# 2026-11-13    Michael Vitale    version 4.0  Apply Issue#01 fix. Update Python from version 2 to version 3.
 ##########################################################################################
 import string, curses, sys, os, subprocess, time, datetime, types, warnings, random, getpass, signal
 from optparse  import OptionParser
@@ -52,8 +52,8 @@ import psycopg2
 DESCRIPTION="This python utility program compares schemas for a specific database."
 VERSION    = 4.0
 PROGNAME   = "pg_match"
-ADATE      = "November 12, 2026"
-PROGDATE   = "2026-11-12"
+ADATE      = "November 13, 2026"
+PROGDATE   = "2026-11-13"
 
 #Globals
 FAIL = 1
@@ -350,9 +350,9 @@ class maint:
     ###############################
     def CompareObjects(self):
         # Compare object counts using one SQL statement for both schemas.
-        sql = "SELECT rt.tbls_regular as tables_normal, ut.unlogged_tables as tbls_unlogged, pt.partitions as tbls_child, pn.parents as tbls_parents, rt.tbls_regular + ut.unlogged_tables + pt.partitions + pn.parents as tbls_total, " \
+        sql = "SELECT rt.tbls_regular as tables_normal, ut.unlogged_tables as tbls_unlogd, pt.partitions as tbls_child, pn.parents as tbls_parents, rt.tbls_regular + ut.unlogged_tables + pt.partitions + pn.parents as tbls_total, " \
               "(SELECT count(*) FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %(schema)s AND con.contype = 'f') AS fkeys, " \
-              "(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %(schema)s AND c.relkind = 'f') AS ftbles, " \
+              "(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %(schema)s AND c.relkind = 'f') AS ftbls, " \
               "se.sequences as seqs, ide.identities as identities, ix.indexes as indexes, vi.views as views, pv.pviews as pub_views, mv.mats as mat_views, fn.functions as functions, ty.types as types, " \
               "tf.trigfuncs, tr.triggers as triggers, co.collations as collations, dom.domains as domains, ru.rules as rules, po.policies as policies, com.comments as comments " \
               "FROM (select count(*) as tbls_regular FROM pg_class c, pg_tables t, pg_namespace n WHERE t.schemaname = %(schema)s AND t.tablename = c.relname AND c.relkind = 'r' AND " \
@@ -1658,9 +1658,9 @@ class maint:
         widths = [max(len(name), len(str(Srow[i])), len(str(Trow[i]))) for i, name in enumerate(names)]
 
         print("         " + "  ".join(f"{name:>{widths[i]}}" for i, name in enumerate(names)))
+        print("         " + "  ".join("-" * widths[i] for i in range(len(names))))
         print("Source   " + "  ".join(f"{str(Srow[i]):>{widths[i]}}" for i in range(len(names))))
         print("Target   " + "  ".join(f"{str(Trow[i]):>{widths[i]}}" for i in range(len(names))))
-        print('')
 
         print ('')
         return RC_OK    
@@ -1881,84 +1881,3 @@ pg.CloseStuff()
 
 sys.exit(SUCCESS)
 
-''' 
-following is stuff to get other DDL stuff to compare
-TRIGGERS:
-SELECT trigger_catalog, trigger_schema, trigger_name, event_manipulation, event_object_catalog, event_object_schema, event_object_table, action_statement 
-FROM information_schema.triggers WHERE trigger_schema = 'public'  ORDER BY trigger_schema, event_object_table, trigger_name limit 10;
-select n.nspname as schema_name, c.relname as table_name, t.tgname as trigger_name 
-FROM pg_trigger t, pg_class c, pg_namespace n where n.nspname = 'public' and  t.tgrelid = c.oid and c.relnamespace = n.oid order by 1,2,3 limit 10;
-select pg_get_triggerdef(oid) from pg_trigger where tgname = '<your trigger name>';
-VIEWS: 
-SELECT schemaname, viewname, definition  FROM pg_catalog.pg_views
-SELECT a.tblname, a.rowcnt, b.tblname, b.rowcnt from (SELECT c.relname as tblname, c.reltuples::bigint as rowcnt from pg_class c, pg_namespace n WHERE n.oid = c.relnamespace and n.nspname = 'sample' and c.relkind = 'r' ORDER BY 1) a, 
-(SELECT t.relname as tblname, t.n_live_tup::bigint as rowcnt from pg_stat_user_tables t, pg_class c, pg_namespace n WHERE n.nspname = 'sample' AND 
-n.oid = c.relnamespace AND n.nspname = t.schemaname and t.relname = c.relname and c.relkind = 'r'  ORDER BY 1) b WHERE a.tblname = b.tblname and a.tblname in ('measurement');
-SELECT a.tblname, a.rowcnt, b.tblname, b.rowcnt from (SELECT c.relname as tblname, c.reltuples::bigint as rowcnt from pg_class c, pg_namespace n WHERE n.oid = c.relnamespace and n.nspname = 'sample_clonedata' and c.relkind = 'r' ORDER BY 1) a, 
-(SELECT t.relname as tblname, t.n_live_tup::bigint as rowcnt from pg_stat_user_tables t, pg_class c, pg_namespace n WHERE n.nspname = 'sample_clonedata' AND 
-n.oid = c.relnamespace AND n.nspname = t.schemaname and t.relname = c.relname and c.relkind = 'r'  ORDER BY 1) b WHERE a.tblname = b.tblname and a.tblname in ('measurement');
-COMMENTS:
-SELECT CASE WHEN c.relkind = 'r' THEN 'TABLE' WHEN c.relkind = 'p' THEN 'PARTITIONED TABLE' WHEN c.relkind = 'S' THEN 'SEQUENCE' WHEN c.relkind = 'f' THEN 'FOREIGN TABLE' WHEN c.relkind = 'v' THEN 'VIEW' WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' WHEN c.relkind = 'i' THEN 'INDEX' WHEN c.relkind = 'c' THEN 'TYPE' END as OBJECT, c.relname as relname, d.description as comments
-FROM pg_class c JOIN pg_namespace n ON (n.oid = c.relnamespace) LEFT JOIN pg_description d ON (c.oid = d.objoid) LEFT JOIN pg_attribute a ON (c.oid = a.attrelid AND a.attnum > 0 and a.attnum = d.objsubid)
-WHERE d.objsubid = 0 AND d.description IS NOT NULL AND n.nspname in ('sample')
-UNION 
-SELECT CASE WHEN c.relkind = 'r' THEN 'TABLE' WHEN c.relkind = 'p' THEN 'PARTITIONED TABLE' WHEN c.relkind = 'S' THEN 'SEQUENCE' WHEN c.relkind = 'f' THEN 'FOREIGN TABLE' WHEN c.relkind = 'v' THEN 'VIEW' WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' WHEN c.relkind = 'i' THEN 'INDEX' WHEN c.relkind = 'c' THEN 'TYPE' END as OBJECT, c.relname::text as relname, d.description as comments from pg_namespace n, pg_description d, pg_class c where d.objoid = c.oid and c.relnamespace = n.oid and d.objsubid = 0 AND n.nspname in ('sample')
-UNION 
--- column comments
-SELECT 'COLUMN' as OBJECT, s.column_name as relname, d.description as comments FROM pg_description d, pg_class c, pg_namespace n, information_schema.columns s 
-WHERE d.objsubid > 0 and d.objoid = c.oid and c.relnamespace = n.oid and n.nspname = 'sample' and s.table_schema = n.nspname and s.table_name = c.relname and s.ordinal_position = d.objsubid
-UNION
--- domain comments
-SELECT 'DOMAIN' as OBJECT, t.typname as relname, d.description as comments from pg_description d, pg_type t, pg_namespace n  where d.description = 'my domain comments on addr' and d.objoid = t.oid and t.typtype = 'd' and t.typnamespace = n.oid AND d.objsubid = 0 AND n.nspname = 'sample'
-UNION
--- schema comments
-SELECT 'SCHEMA' as OBJECT, n.nspname as relname, d.description as comments FROM pg_description d, pg_namespace n WHERE d.objsubid = 0 AND d.classoid::regclass = 'pg_namespace'::regclass AND d.objoid = n.oid and n.nspname = 'sample' 
-UNION
--- types comments
-SELECT 'TYPE' AS OBJECT, t.typname as relname, pg_catalog.obj_description(t.oid, 'pg_type') as comments FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE (t.typrelid = 0 OR
-(SELECT c.relkind = 'c' FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid)) AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_type el
-WHERE el.oid = t.typelem AND el.typarray = t.oid) AND n.nspname in ('sample') AND pg_catalog.obj_description(t.oid, 'pg_type') IS NOT NULL AND t.typtype = 'c'
-UNION 
-SELECT 'COLATION' as OBJECT, collname as relname,  pg_catalog.obj_description(c.oid, 'pg_collation') as comments FROM pg_catalog.pg_collation c, pg_catalog.pg_namespace n WHERE n.oid = c.collnamespace AND 
-c.collencoding IN (-1, pg_catalog.pg_char_to_encoding(pg_catalog.getdatabaseencoding())) AND n.nspname in ('sample') AND pg_catalog.obj_description(c.oid, 'pg_collation') IS NOT NULL 
-UNION
-SELECT CASE WHEN p.prokind = 'f' THEN 'FUNCTION' WHEN p.prokind = 'p' THEN 'PROCEDURE' WHEN p.prokind = 'a' THEN 'AGGREGATE FUNCTION' WHEN p.prokind = 'w' THEN 'WINDOW FUNCTION' END as OBJECT,
-p.proname as relname, d.description as comments from pg_catalog.pg_namespace n 
-JOIN pg_catalog.pg_proc p ON p.pronamespace = n.oid JOIN pg_description d ON (d.objoid = p.oid) WHERE d.objsubid = 0 AND n.nspname in ('sample')
-UNION
-SELECT 'POLICY' as OBJECT, p1.policyname as relname, d.description as comments from pg_policies p1, pg_policy p2, pg_class c, pg_namespace n, pg_description d WHERE d.objsubid = 0 AND p1.schemaname = n.nspname and p1.tablename = c.relname AND 
-n.oid = c.relnamespace and c.relkind in ('r','p') and p1.policyname = p2.polname and d.objoid = p2.oid and p1.schemaname in ('sample')
-ORDER BY 1;
-WITH details as (SELECT CASE WHEN c.relkind = 'r' THEN 'TABLE' WHEN c.relkind = 'p' THEN 'PARTITIONED TABLE' WHEN c.relkind = 'S' THEN 'SEQUENCE' WHEN c.relkind = 'f' THEN 'FOREIGN TABLE' WHEN c.relkind = 'v' THEN 'VIEW' WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' WHEN c.relkind = 'i' THEN 'INDEX' WHEN c.relkind = 'c' THEN 'TYPE' END as OBJECT, c.relname as relname, d.description as comments
-FROM pg_class c JOIN pg_namespace n ON (n.oid = c.relnamespace) LEFT JOIN pg_description d ON (c.oid = d.objoid) LEFT JOIN pg_attribute a ON (c.oid = a.attrelid AND a.attnum > 0 and a.attnum = d.objsubid)
-WHERE d.objsubid = 0 AND d.description IS NOT NULL AND n.nspname in ('sample')
-UNION 
-SELECT CASE WHEN c.relkind = 'r' THEN 'TABLE' WHEN c.relkind = 'p' THEN 'PARTITIONED TABLE' WHEN c.relkind = 'S' THEN 'SEQUENCE' WHEN c.relkind = 'f' THEN 'FOREIGN TABLE' WHEN c.relkind = 'v' THEN 'VIEW' WHEN c.relkind = 'm' THEN 'MATERIALIZED VIEW' WHEN c.relkind = 'i' THEN 'INDEX' WHEN c.relkind = 'c' THEN 'TYPE' END as OBJECT, c.relname::text as relname, d.description as comments from pg_namespace n, pg_description d, pg_class c where d.objoid = c.oid and c.relnamespace = n.oid and d.objsubid = 0 AND n.nspname in ('sample')
-UNION 
--- column comments
-SELECT 'COLUMN' as OBJECT, s.column_name as relname, d.description as comments FROM pg_description d, pg_class c, pg_namespace n, information_schema.columns s 
-WHERE d.objsubid > 0 and d.objoid = c.oid and c.relnamespace = n.oid and n.nspname = 'sample' and s.table_schema = n.nspname and s.table_name = c.relname and s.ordinal_position = d.objsubid
-UNION
--- domain comments
-SELECT 'DOMAIN' as OBJECT, t.typname as relname, d.description as comments from pg_description d, pg_type t, pg_namespace n  where d.description = 'my domain comments on addr' and d.objoid = t.oid and t.typtype = 'd' and t.typnamespace = n.oid AND d.objsubid = 0 AND n.nspname = 'sample'
-UNION
--- schema comments
-SELECT 'SCHEMA' as OBJECT, n.nspname as relname, d.description as comments FROM pg_description d, pg_namespace n WHERE d.objsubid = 0 AND d.classoid::regclass = 'pg_namespace'::regclass AND d.objoid = n.oid and n.nspname = 'sample' 
-UNION
--- types comments
-SELECT 'TYPE' AS OBJECT, t.typname as relname, pg_catalog.obj_description(t.oid, 'pg_type') as comments FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace WHERE (t.typrelid = 0 OR
-(SELECT c.relkind = 'c' FROM pg_catalog.pg_class c WHERE c.oid = t.typrelid)) AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_type el
-WHERE el.oid = t.typelem AND el.typarray = t.oid) AND n.nspname in ('sample') AND pg_catalog.obj_description(t.oid, 'pg_type') IS NOT NULL AND t.typtype = 'c'
-UNION 
-SELECT 'COLATION' as OBJECT, collname as relname,  pg_catalog.obj_description(c.oid, 'pg_collation') as comments FROM pg_catalog.pg_collation c, pg_catalog.pg_namespace n WHERE n.oid = c.collnamespace AND 
-c.collencoding IN (-1, pg_catalog.pg_char_to_encoding(pg_catalog.getdatabaseencoding())) AND n.nspname in ('sample') AND pg_catalog.obj_description(c.oid, 'pg_collation') IS NOT NULL 
-UNION
-SELECT CASE WHEN p.prokind = 'f' THEN 'FUNCTION' WHEN p.prokind = 'p' THEN 'PROCEDURE' WHEN p.prokind = 'a' THEN 'AGGREGATE FUNCTION' WHEN p.prokind = 'w' THEN 'WINDOW FUNCTION' END as OBJECT,
-p.proname as relname, d.description as comments from pg_catalog.pg_namespace n 
-JOIN pg_catalog.pg_proc p ON p.pronamespace = n.oid JOIN pg_description d ON (d.objoid = p.oid) WHERE d.objsubid = 0 AND n.nspname in ('sample')
-UNION
-SELECT 'POLICY' as OBJECT, p1.policyname as relname, d.description as comments from pg_policies p1, pg_policy p2, pg_class c, pg_namespace n, pg_description d WHERE d.objsubid = 0 AND p1.schemaname = n.nspname and p1.tablename = c.relname AND 
-n.oid = c.relnamespace and c.relkind in ('r','p') and p1.policyname = p2.polname and d.objoid = p2.oid and p1.schemaname in ('sample')
-ORDER BY 1)
-Select object, count(*) from details group by 1 order by 1;
-'''
